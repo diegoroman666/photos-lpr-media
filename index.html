@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cuadro de Honor Escolar</title>
+    
+    <!-- Tailwind CSS para los estilos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Librería SheetJS para leer archivos Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Phosphor Icons para los iconos -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        /* Estilos base y utilidades personalizadas */
+        body { font-family: system-ui, -apple-system, sans-serif; }
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;  
+            overflow: hidden;
+        }
+        /* Ocultar scrollbar pero permitir scroll */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- Encabezado -->
+        <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 text-center">
+            <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
+            <p class="text-slate-500 mb-6">Selecciona un curso y arrastra las fotos (los nombres se autocompletarán según el archivo o el Excel)</p>
+            
+            <!-- Selector de Cursos -->
+            <div id="course-selector" class="flex flex-wrap justify-center gap-2">
+                <!-- Se llenará con JS -->
+            </div>
+
+            <!-- Botón de Adjuntar Excel -->
+            <div class="mt-6 flex justify-center">
+                <input type="file" id="excel-input" accept=".xlsx, .xls, .csv" class="hidden" />
+                <button id="btn-excel" class="flex items-center gap-2 px-6 py-3 rounded-lg font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-sm transition-all hover:shadow-md">
+                    <i class="ph ph-file-text text-xl"></i>
+                    Adjuntar Lista Excel (Nombres <span id="excel-curso-label">1A</span>)
+                </button>
+            </div>
+        </header>
+
+        <!-- Cuadrícula Principal (7x7) -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-x-auto no-scrollbar">
+            <div class="min-w-[800px]">
+                <div id="grid-container" class="grid grid-cols-7 gap-4">
+                    <!-- Las 49 celdas se generarán con JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Botón de Descarga -->
+        <div class="flex justify-center pt-4 pb-8">
+            <button id="btn-download" class="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all bg-blue-600 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-1">
+                <i class="ph ph-download-simple text-2xl" id="download-icon"></i>
+                <i class="ph ph-spinner animate-spin text-2xl hidden" id="loading-icon"></i>
+                <span id="download-text">Descargar Cuadro Completo (1A)</span>
+            </button>
+        </div>
+
+    </div>
+
+    <!-- Lógica de la Aplicación -->
+    <script>
+        const CURSOS = ['1A', '1B', '1C', '2A', '2B', '2C', '3A', '3B', '4A', '4B'];
+        let activeCurso = '1A';
+        
+        // Estructura de estado: { '1A': [49 {url, name, rut, originalFile}], '1B': [...] }
+        const albums = {};
+        CURSOS.forEach(curso => {
+            albums[curso] = Array.from({ length: 49 }, () => ({ url: null, name: "", rut: "", originalFile: null }));
+        });
+
+        // Elementos del DOM
+        const courseSelector = document.getElementById('course-selector');
+        const gridContainer = document.getElementById('grid-container');
+        const excelInput = document.getElementById('excel-input');
+        const btnExcel = document.getElementById('btn-excel');
+        const excelCursoLabel = document.getElementById('excel-curso-label');
+        const btnDownload = document.getElementById('btn-download');
+        const downloadText = document.getElementById('download-text');
+        const downloadIcon = document.getElementById('download-icon');
+        const loadingIcon = document.getElementById('loading-icon');
+
+        // Función para limpiar nombres de archivos (ej: "juan_perez.jpg" -> "Juan Perez")
+        function formatName(filename) {
+            if (!filename) return "Alumno";
+            const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
+            return nameWithoutExt
+                .replace(/[-_]/g, ' ')
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ');
+        }
+
+        // 1. INICIALIZAR CURSOS
+        function renderCourseButtons() {
+            courseSelector.innerHTML = '';
+            CURSOS.forEach(curso => {
+                const btn = document.createElement('button');
+                btn.innerText = curso;
+                btn.className = `px-4 py-2 rounded-lg font-semibold transition-all ${
+                    activeCurso === curso 
+                        ? 'bg-blue-600 text-white shadow-md' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`;
+                btn.onclick = () => {
+                    activeCurso = curso;
+                    excelCursoLabel.innerText = curso;
+                    downloadText.innerText = `Descargar Cuadro Completo (${curso})`;
+                    renderCourseButtons();
+                    updateFullGrid();
+                };
+                courseSelector.appendChild(btn);
+            });
+        }
+
+        // 2. CREAR Y ACTUALIZAR LA CUADRÍCULA
+        function createGrid() {
+            gridContainer.innerHTML = '';
+            for (let i = 0; i < 49; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all aspect-[3/4] border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer';
+                cell.dataset.index = i;
+                
+                // Eventos Drag & Drop
+                cell.addEventListener('dragover', (e) => handleDragOver(e, cell));
+                cell.addEventListener('dragleave', (e) => handleDragLeave(e, cell));
+                cell.addEventListener('drop', (e) => handleDrop(e, i, cell));
+                
+                // Clic para subir foto
+                cell.addEventListener('click', (e) => {
+                    if (e.target.closest('.delete-btn') || e.target.closest('.name-area')) return;
+                    if (!albums[activeCurso][i].url) {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.onchange = (eFile) => handleFileInput(eFile, i);
+                        input.click();
+                    }
+                });
+
+                gridContainer.appendChild(cell);
+            }
+        }
+
+        function updateFullGrid() {
+            const cells = gridContainer.querySelectorAll('.cell-wrapper');
+            cells.forEach((cell, index) => {
+                updateCellDisplay(cell, index);
+            });
+        }
+
+        function updateCellDisplay(cell, index) {
+            const data = albums[activeCurso][index];
+            const hasImage = !!data.url;
+            const displayName = data.name || `Alumno ${index + 1}`;
+            const displayRut = data.rut || '';
+
+            // Resetear clases base
+            cell.className = `cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all aspect-[3/4] ${
+                hasImage ? 'border-slate-200 bg-white hover:shadow-md' : 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer'
+            }`;
+
+            // Contenido dinámico
+            let innerHTML = '';
+
+            if (hasImage) {
+                innerHTML = `
+                    <div class="relative w-full h-full flex-grow overflow-hidden bg-slate-100">
+                        <img src="${data.url}" alt="${displayName}" class="w-full h-full object-cover" />
+                        <button class="delete-btn absolute top-2 right-2 p-1.5 bg-red-500/80 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto">
+                            <i class="ph ph-trash text-base"></i>
+                        </button>
+                    </div>
+                    <div class="name-area p-2 border-t border-slate-200 bg-white text-center min-h-[4rem] flex flex-col items-center justify-center">
+                        <div class="text-xs sm:text-sm font-semibold text-slate-700 truncate w-full px-1 flex items-center justify-center gap-1 cursor-text" title="Clic para editar datos">
+                            <span class="truncate name-text">${displayName}</span>
+                            <i class="ph ph-pencil-simple text-slate-400 opacity-0 group-hover:opacity-100 text-xs"></i>
+                        </div>
+                        ${displayRut ? `<div class="text-[10px] sm:text-xs text-slate-500 truncate w-full cursor-text" title="Clic para editar datos">${displayRut}</div>` : ''}
+                    </div>
+                `;
+            } else {
+                innerHTML = `
+                    <div class="relative w-full h-full flex-grow overflow-hidden bg-slate-100 flex flex-col items-center justify-center p-4">
+                        <span class="text-xs font-bold text-slate-300 absolute top-2 left-2">${index + 1}</span>
+                        <i class="ph ph-camera text-4xl mb-2 opacity-50 group-hover:opacity-100 transition-opacity text-slate-400 drop-icon"></i>
+                        <span class="text-xs text-center font-medium text-slate-400 drop-text">
+                            ${data.name ? 'Arrastra foto para' : 'Arrastra o haz clic'}
+                        </span>
+                        ${data.name ? `<span class="text-sm font-bold text-slate-500 mt-2 text-center line-clamp-2">${data.name}</span>` : ''}
+                        ${displayRut ? `<span class="text-xs text-slate-400 text-center mt-1">${displayRut}</span>` : ''}
+                    </div>
+                    <div class="name-area p-2 border-t border-slate-200 bg-slate-50 text-center min-h-[4rem] flex flex-col items-center justify-center">
+                        <div class="text-xs sm:text-sm font-semibold text-slate-700 truncate w-full px-1 flex items-center justify-center gap-1 cursor-text" title="Clic para editar datos">
+                            <span class="truncate name-text">${displayName}</span>
+                            <i class="ph ph-pencil-simple text-slate-400 opacity-0 group-hover:opacity-100 text-xs"></i>
+                        </div>
+                        ${displayRut ? `<div class="text-[10px] sm:text-xs text-slate-500 truncate w-full cursor-text" title="Clic para editar datos">${displayRut}</div>` : ''}
+                    </div>
+                `;
+            }
+
+            cell.innerHTML = innerHTML;
+
+            // Bind events for dynamically added buttons
+            if (hasImage) {
+                cell.querySelector('.delete-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    removePhoto(index);
+                });
+            }
+
+            // Bind event for editing name
+            const nameArea = cell.querySelector('.name-area');
+            nameArea.addEventListener('click', (e) => {
+                e.stopPropagation();
+                startEditingName(cell, index, displayName);
+            });
+        }
+
+        // 3. LÓGICA DE FOTOS Y ARRASTRAR
+        function handleDragOver(e, cell) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!cell.classList.contains('border-blue-500')) {
+                cell.classList.add('border-blue-500', 'bg-blue-50', 'scale-105', 'shadow-lg', 'z-10');
+                const dropIcon = cell.querySelector('.drop-icon');
+                const dropText = cell.querySelector('.drop-text');
+                if(dropIcon) {
+                    dropIcon.className = "ph ph-upload-simple text-4xl mb-2 text-blue-500 animate-bounce drop-icon";
+                }
+                if(dropText) {
+                    dropText.innerText = "¡Suelta la foto!";
+                }
+            }
+        }
+
+        function handleDragLeave(e, cell) {
+            e.preventDefault();
+            e.stopPropagation();
+            updateCellDisplay(cell, cell.dataset.index); // Restaura el estado visual normal
+        }
+
+        function handleDrop(e, index, cell) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                processFile(files[0], index);
+            } else {
+                updateCellDisplay(cell, index); // Restaurar visual si falló
+            }
+        }
+
+        function handleFileInput(e, index) {
+            const files = e.target.files;
+            if (files && files.length > 0) {
+                processFile(files[0], index);
+            }
+        }
+
+        function processFile(file, index) {
+            if (!file.type.startsWith('image/')) {
+                alert('Por favor, sube solo archivos de imagen.');
+                return;
+            }
+
+            const imageUrl = URL.createObjectURL(file);
+            const currentData = albums[activeCurso][index];
+            const existingName = currentData.name;
+            
+            // Prioridad: 1. Nombre de Excel (existente), 2. Formatear nombre archivo
+            const finalName = (existingName && existingName.trim() !== "") ? existingName : formatName(file.name);
+            
+            if (currentData.url) URL.revokeObjectURL(currentData.url);
+
+            albums[activeCurso][index] = {
+                url: imageUrl,
+                name: finalName,
+                originalFile: file.name
+            };
+            
+            updateFullGrid();
+        }
+
+        function removePhoto(index) {
+            const currentData = albums[activeCurso][index];
+            if (currentData.url) URL.revokeObjectURL(currentData.url);
+            
+            // Conservamos el nombre y el RUT (podría venir del excel)
+            albums[activeCurso][index] = { ...currentData, url: null, originalFile: null };
+            updateFullGrid();
+        }
+
+        // 4. EDICIÓN DE NOMBRES Y RUT
+        function startEditingName(cell, index, currentName) {
+            const nameArea = cell.querySelector('.name-area');
+            nameArea.innerHTML = `
+                <div class="w-full flex flex-col gap-1 px-1">
+                    <input type="text" class="edit-name w-full text-sm text-center border-b border-blue-500 focus:outline-none bg-transparent" placeholder="Nombre" value="${albums[activeCurso][index].name || ''}">
+                    <input type="text" class="edit-rut w-full text-xs text-center border-b border-blue-500 focus:outline-none bg-transparent text-slate-500" placeholder="RUT" value="${albums[activeCurso][index].rut || ''}">
+                </div>
+            `;
+            const inputName = nameArea.querySelector('.edit-name');
+            const inputRut = nameArea.querySelector('.edit-rut');
+            inputName.focus();
+            
+            // Mover cursor al final
+            inputName.selectionStart = inputName.selectionEnd = inputName.value.length;
+
+            const saveEdit = () => {
+                albums[activeCurso][index].name = inputName.value;
+                albums[activeCurso][index].rut = inputRut.value;
+                updateCellDisplay(cell, index);
+            };
+
+            inputName.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    inputRut.focus();
+                }
+            });
+
+            inputRut.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveEdit();
+                }
+            });
+
+            // Guardar al perder el foco en el contenedor de edición
+            nameArea.addEventListener('focusout', (e) => {
+                if (!nameArea.contains(e.relatedTarget)) {
+                    saveEdit();
+                }
+            });
+        }
+
+        // 5. SUBIDA DE EXCEL
+        btnExcel.addEventListener('click', () => excelInput.click());
+
+        excelInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (typeof window.XLSX === 'undefined') {
+                alert("La librería de Excel aún se está cargando. Intenta de nuevo en unos segundos.");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const data = evt.target.result;
+                    const workbook = window.XLSX.read(data, { type: 'binary' });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rows = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                    let students = [];
+                    // Comenzamos el ciclo en i = 1 (Fila 2 del Excel) para saltar los encabezados (Fila 1)
+                    for (let i = 1; i < rows.length; i++) {
+                        const row = rows[i];
+                        if (row && row.length > 0) {
+                            const val0 = String(row[0] || '').trim();
+                            const val1 = String(row[1] || '').trim();
+                            
+                            // Si la fila no está vacía, agregamos al alumno
+                            if (val0 !== "" || val1 !== "") {
+                                students.push({ name: val0, rut: val1 });
+                            }
+                        }
+                    }
+
+                    if (students.length === 0) {
+                        alert("No se encontraron nombres ni RUT a partir de la segunda fila del Excel.");
+                        return;
+                    }
+
+                    // Asignar nombres y rut al curso activo
+                    students.forEach((student, i) => {
+                        if (i < 49) {
+                            albums[activeCurso][i].name = student.name;
+                            albums[activeCurso][i].rut = student.rut;
+                        }
+                    });
+
+                    updateFullGrid();
+                    excelInput.value = ""; // Resetear input
+                    alert(`¡Éxito! Se cargaron ${Math.min(students.length, 49)} registros en el curso ${activeCurso}.`);
+
+                } catch (error) {
+                    console.error(error);
+                    alert("Hubo un error al leer el archivo. Asegúrate de que sea un Excel válido (.xlsx o .xls).");
+                }
+            };
+            reader.readAsBinaryString(file);
+        });
+
+        // 6. EXPORTAR A IMAGEN (CANVAS)
+        btnDownload.addEventListener('click', async () => {
+            btnDownload.disabled = true;
+            btnDownload.classList.replace('bg-blue-600', 'bg-blue-400');
+            btnDownload.classList.remove('hover:-translate-y-1', 'hover:shadow-xl');
+            downloadIcon.classList.add('hidden');
+            loadingIcon.classList.remove('hidden');
+            downloadText.innerText = "Procesando imagen...";
+
+            try {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                const cols = 7;
+                const rows = 7;
+                const cellW = 500;
+                const cellH = 650;
+                const imgH = 550;
+                const gap = 30;
+                const margin = 80;
+                const headerH = 150;
+
+                canvas.width = (cols * cellW) + ((cols - 1) * gap) + (margin * 2);
+                canvas.height = (rows * cellH) + ((rows - 1) * gap) + (margin * 2) + headerH;
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 80px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Cuadro de Honor - Curso ${activeCurso}`, canvas.width / 2, margin + 80);
+
+                const currentAlbum = albums[activeCurso];
+
+                const loadImage = (url) => new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = reject;
+                    img.src = url;
+                });
+
+                for (let i = 0; i < 49; i++) {
+                    const cell = currentAlbum[i];
+                    const col = i % cols;
+                    const row = Math.floor(i / cols);
+
+                    const x = margin + (col * (cellW + gap));
+                    const y = margin + headerH + (row * (cellH + gap));
+
+                    if (cell && cell.url) {
+                        try {
+                            const img = await loadImage(cell.url);
+                            
+                            // Object-cover simulation
+                            const imgRatio = img.width / img.height;
+                            const boxRatio = cellW / imgH;
+                            let sWidth, sHeight, sx, sy;
+
+                            if (imgRatio > boxRatio) {
+                                sHeight = img.height;
+                                sWidth = sHeight * boxRatio;
+                                sx = (img.width - sWidth) / 2;
+                                sy = 0;
+                            } else {
+                                sWidth = img.width;
+                                sHeight = sWidth / boxRatio;
+                                sx = 0;
+                                sy = (img.height - sHeight) / 2;
+                            }
+
+                            ctx.drawImage(img, sx, sy, sWidth, sHeight, x, y, cellW, imgH);
+                            
+                            ctx.strokeStyle = '#e2e8f0';
+                            ctx.lineWidth = 4;
+                            ctx.strokeRect(x, y, cellW, imgH);
+
+                            ctx.fillStyle = '#334155';
+                            ctx.font = 'bold 32px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(cell.name || `Alumno ${i+1}`, x + (cellW / 2), y + imgH + 45, cellW - 20);
+
+                            if (cell.rut) {
+                                ctx.fillStyle = '#64748b';
+                                ctx.font = '24px sans-serif';
+                                ctx.fillText(cell.rut, x + (cellW / 2), y + imgH + 80, cellW - 20);
+                            }
+                        } catch (err) {
+                            console.error("Error en imagen celda", i, err);
+                        }
+                    } else {
+                        // Celdas vacías
+                        ctx.fillStyle = '#f8fafc';
+                        ctx.fillRect(x, y, cellW, imgH);
+                        ctx.strokeStyle = '#cbd5e1';
+                        ctx.lineWidth = 4;
+                        ctx.setLineDash([15, 15]);
+                        ctx.strokeRect(x, y, cellW, imgH);
+                        ctx.setLineDash([]); 
+                        
+                        ctx.fillStyle = '#94a3b8';
+                        ctx.font = 'bold 60px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText((i + 1).toString(), x + (cellW / 2), y + (imgH / 2) - 10);
+                        
+                        if (cell && cell.name) {
+                            ctx.font = 'bold 30px sans-serif';
+                            ctx.fillStyle = '#64748b';
+                            ctx.fillText(cell.name, x + (cellW / 2), y + (imgH / 2) + 30, cellW - 20);
+                            
+                            ctx.fillStyle = '#334155';
+                            ctx.font = 'bold 32px sans-serif';
+                            ctx.fillText(cell.name, x + (cellW / 2), y + imgH + 45, cellW - 20);
+                        }
+
+                        if (cell && cell.rut) {
+                            ctx.font = '20px sans-serif';
+                            ctx.fillStyle = '#94a3b8';
+                            ctx.fillText(cell.rut, x + (cellW / 2), y + (imgH / 2) + 60, cellW - 20);
+
+                            ctx.fillStyle = '#64748b';
+                            ctx.font = '24px sans-serif';
+                            ctx.fillText(cell.rut, x + (cellW / 2), y + imgH + 80, cellW - 20);
+                        }
+                    }
+                }
+
+                // Generar y descargar
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                const link = document.createElement('a');
+                link.download = `Cuadro_Honor_Curso_${activeCurso}.jpg`;
+                link.href = dataUrl;
+                link.click();
+
+            } catch (error) {
+                console.error("Error exportando:", error);
+                alert("Hubo un error al generar la imagen. Revisa la consola.");
+            } finally {
+                // Restaurar botón
+                btnDownload.disabled = false;
+                btnDownload.classList.replace('bg-blue-400', 'bg-blue-600');
+                btnDownload.classList.add('hover:-translate-y-1', 'hover:shadow-xl');
+                downloadIcon.classList.remove('hidden');
+                loadingIcon.classList.add('hidden');
+                downloadText.innerText = `Descargar Cuadro Completo (${activeCurso})`;
+            }
+        });
+
+        // 7. INICIO
+        renderCourseButtons();
+        createGrid();
+        updateFullGrid();
+
+    </script>
+</body>
+</html>
