@@ -4,65 +4,86 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cuadro de Honor Escolar</title>
-    
-    <!-- Tailwind CSS para los estilos -->
+
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Librería SheetJS para leer archivos Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
-    <!-- Phosphor Icons para los iconos -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
     <style>
-        /* Estilos base y utilidades personalizadas */
         body { font-family: system-ui, -apple-system, sans-serif; }
-        .line-clamp-2 {
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;  
-            overflow: hidden;
-        }
-        /* Ocultar scrollbar pero permitir scroll */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .name-text {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.15;
+            word-break: break-word;
+        }
+        .toast {
+            position: fixed; bottom: 20px; right: 20px; z-index: 100;
+            background: #1e293b; color: white; padding: 10px 16px; border-radius: 8px;
+            font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            opacity: 0; transform: translateY(10px); transition: all .25s;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { background: #b91c1c; }
+        .cell-busy::after {
+            content: ""; position: absolute; inset: 0; background: rgba(255,255,255,0.6);
+            backdrop-filter: blur(2px); pointer-events: none; z-index: 5;
+        }
+        .cell-busy::before {
+            content: ""; position: absolute; top: 50%; left: 50%; width: 32px; height: 32px;
+            margin: -16px 0 0 -16px; border: 3px solid #cbd5e1; border-top-color: #2563eb;
+            border-radius: 50%; animation: spin 0.8s linear infinite; z-index: 6;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen p-4 md:p-8">
 
     <div class="max-w-7xl mx-auto space-y-6">
-        
-        <!-- Encabezado -->
+
         <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 text-center">
             <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
-            <p class="text-slate-500 mb-6">Selecciona un curso y arrastra las fotos (los nombres se autocompletarán según el archivo o el Excel)</p>
-            
-            <!-- Selector de Cursos -->
-            <div id="course-selector" class="flex flex-wrap justify-center gap-2">
-                <!-- Se llenará con JS -->
-            </div>
+            <p class="text-slate-500 mb-6">Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.</p>
 
-            <!-- Botón de Adjuntar Excel -->
-            <div class="mt-6 flex justify-center">
+            <div id="course-selector" class="flex flex-wrap justify-center gap-2"></div>
+
+            <div class="mt-6 flex flex-wrap justify-center gap-3">
                 <input type="file" id="excel-input" accept=".xlsx, .xls, .csv" class="hidden" />
-                <button id="btn-excel" class="flex items-center gap-2 px-6 py-3 rounded-lg font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-sm transition-all hover:shadow-md">
+                <button id="btn-excel" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-sm transition-all">
                     <i class="ph ph-file-text text-xl"></i>
-                    Adjuntar Lista Excel (Nombres <span id="excel-curso-label">1A</span>)
+                    Adjuntar Excel (<span id="excel-curso-label">1A</span>)
+                </button>
+                <button id="btn-add-cell" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-sm transition-all">
+                    <i class="ph ph-plus-square text-xl"></i>
+                    Agregar Cuadro
+                </button>
+                <button id="btn-remove-cell" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 shadow-sm transition-all hidden">
+                    <i class="ph ph-minus-square text-xl"></i>
+                    Quitar último
                 </button>
             </div>
         </header>
 
-        <!-- Cuadrícula Principal (7x7) -->
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-x-auto no-scrollbar">
-            <div class="min-w-[800px]">
-                <div id="grid-container" class="grid grid-cols-7 gap-4">
-                    <!-- Las 49 celdas se generarán con JS -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-x-auto no-scrollbar relative">
+            <div id="grid-loading" class="absolute inset-0 flex items-center justify-center bg-white/80 z-10 hidden">
+                <div class="flex items-center gap-3 text-slate-600">
+                    <i class="ph ph-spinner animate-spin text-2xl"></i>
+                    <span>Cargando curso…</span>
                 </div>
+            </div>
+            <div class="min-w-[800px]">
+                <div id="grid-container" class="grid grid-cols-7 gap-3"></div>
+            </div>
+            <div class="text-center text-xs text-slate-400 mt-4">
+                <span id="size-label">49</span> cuadros · curso <span id="size-curso-label">1A</span>
             </div>
         </div>
 
-        <!-- Botón de Descarga -->
-        <div class="flex justify-center pt-4 pb-8">
+        <div class="flex justify-center pt-2 pb-8">
             <button id="btn-download" class="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all bg-blue-600 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-1">
                 <i class="ph ph-download-simple text-2xl" id="download-icon"></i>
                 <i class="ph ph-spinner animate-spin text-2xl hidden" id="loading-icon"></i>
@@ -72,370 +93,462 @@
 
     </div>
 
-    <!-- Lógica de la Aplicación -->
+    <div id="toast" class="toast"></div>
+
     <script>
         const CURSOS = ['1A', '1B', '1C', '2A', '2B', '2C', '3A', '3B', '4A', '4B'];
-        let activeCurso = '1A';
-        
-        // Estructura de estado: { '1A': [49 {url, name, rut, originalFile}], '1B': [...] }
-        const albums = {};
-        CURSOS.forEach(curso => {
-            albums[curso] = Array.from({ length: 49 }, () => ({ url: null, name: "", rut: "", originalFile: null }));
-        });
+        let activeCurso = localStorage.getItem('activeCurso') || '1A';
+        if (!CURSOS.includes(activeCurso)) activeCurso = '1A';
 
-        // Elementos del DOM
+        // albums[curso] = { size, slots: [{name, rut, hasPhoto, contentType, _v}] }
+        const albums = {};
+        CURSOS.forEach(c => { albums[c] = null; });
+
         const courseSelector = document.getElementById('course-selector');
         const gridContainer = document.getElementById('grid-container');
+        const gridLoading = document.getElementById('grid-loading');
         const excelInput = document.getElementById('excel-input');
         const btnExcel = document.getElementById('btn-excel');
         const excelCursoLabel = document.getElementById('excel-curso-label');
+        const sizeLabel = document.getElementById('size-label');
+        const sizeCursoLabel = document.getElementById('size-curso-label');
         const btnDownload = document.getElementById('btn-download');
         const downloadText = document.getElementById('download-text');
         const downloadIcon = document.getElementById('download-icon');
         const loadingIcon = document.getElementById('loading-icon');
+        const btnAddCell = document.getElementById('btn-add-cell');
+        const btnRemoveCell = document.getElementById('btn-remove-cell');
+        const toastEl = document.getElementById('toast');
 
-        // Función para limpiar nombres de archivos (ej: "juan_perez.jpg" -> "Juan Perez")
+        let toastTimer = null;
+        function toast(msg, kind = '') {
+            toastEl.textContent = msg;
+            toastEl.className = `toast show ${kind}`;
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toastEl.className = `toast ${kind}`; }, 2500);
+        }
+
         function formatName(filename) {
-            if (!filename) return "Alumno";
-            const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
-            return nameWithoutExt
-                .replace(/[-_]/g, ' ')
-                .split(' ')
-                .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            if (!filename) return '';
+            const noExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
+            return noExt.replace(/[-_]/g, ' ').split(' ')
+                .filter(Boolean)
+                .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
                 .join(' ');
         }
 
-        // 1. INICIALIZAR CURSOS
+        const photoUrl = (curso, position, v) =>
+            `/api/photo?curso=${encodeURIComponent(curso)}&position=${position}&v=${v || 0}`;
+
+        async function api(path, opts = {}) {
+            const res = await fetch(path, opts);
+            if (!res.ok) {
+                let detail = '';
+                try { detail = (await res.json()).error || ''; } catch {}
+                throw new Error(detail || `HTTP ${res.status}`);
+            }
+            const ct = res.headers.get('content-type') || '';
+            if (ct.includes('application/json')) return res.json();
+            return res;
+        }
+
+        async function loadAlbum(curso) {
+            const data = await api(`/api/album?curso=${encodeURIComponent(curso)}`);
+            data.slots = data.slots.map(s => ({ ...s, _v: Date.now() }));
+            albums[curso] = data;
+            return data;
+        }
+
         function renderCourseButtons() {
             courseSelector.innerHTML = '';
             CURSOS.forEach(curso => {
                 const btn = document.createElement('button');
                 btn.innerText = curso;
                 btn.className = `px-4 py-2 rounded-lg font-semibold transition-all ${
-                    activeCurso === curso 
-                        ? 'bg-blue-600 text-white shadow-md' 
+                    activeCurso === curso
+                        ? 'bg-blue-600 text-white shadow-md'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`;
-                btn.onclick = () => {
+                btn.onclick = async () => {
+                    if (curso === activeCurso) return;
                     activeCurso = curso;
+                    localStorage.setItem('activeCurso', curso);
                     excelCursoLabel.innerText = curso;
+                    sizeCursoLabel.innerText = curso;
                     downloadText.innerText = `Descargar Cuadro Completo (${curso})`;
                     renderCourseButtons();
-                    updateFullGrid();
+                    await ensureLoaded(curso);
+                    renderGrid();
                 };
                 courseSelector.appendChild(btn);
             });
         }
 
-        // 2. CREAR Y ACTUALIZAR LA CUADRÍCULA
-        function createGrid() {
-            gridContainer.innerHTML = '';
-            for (let i = 0; i < 49; i++) {
-                const cell = document.createElement('div');
-                cell.className = 'cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all aspect-[3/4] border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer';
-                cell.dataset.index = i;
-                
-                // Eventos Drag & Drop
-                cell.addEventListener('dragover', (e) => handleDragOver(e, cell));
-                cell.addEventListener('dragleave', (e) => handleDragLeave(e, cell));
-                cell.addEventListener('drop', (e) => handleDrop(e, i, cell));
-                
-                // Clic para subir foto
-                cell.addEventListener('click', (e) => {
-                    if (e.target.closest('.delete-btn') || e.target.closest('.name-area')) return;
-                    if (!albums[activeCurso][i].url) {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = 'image/*';
-                        input.onchange = (eFile) => handleFileInput(eFile, i);
-                        input.click();
-                    }
-                });
+        async function ensureLoaded(curso) {
+            if (albums[curso]) return;
+            gridLoading.classList.remove('hidden');
+            try {
+                await loadAlbum(curso);
+            } catch (e) {
+                toast(`Error cargando: ${e.message}`, 'error');
+                albums[curso] = { size: 49, slots: Array.from({ length: 49 }, () => ({ name: '', rut: '', hasPhoto: false, _v: 0 })) };
+            } finally {
+                gridLoading.classList.add('hidden');
+            }
+        }
 
+        function renderGrid() {
+            const album = albums[activeCurso];
+            if (!album) return;
+            sizeLabel.innerText = album.size;
+            btnRemoveCell.classList.toggle('hidden', album.size <= 49);
+
+            gridContainer.innerHTML = '';
+            for (let i = 0; i < album.size; i++) {
+                const cell = buildCell(i);
                 gridContainer.appendChild(cell);
             }
         }
 
-        function updateFullGrid() {
-            const cells = gridContainer.querySelectorAll('.cell-wrapper');
-            cells.forEach((cell, index) => {
-                updateCellDisplay(cell, index);
+        function buildCell(index) {
+            const cell = document.createElement('div');
+            cell.dataset.index = index;
+            cell.className = 'cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all bg-white';
+
+            cell.addEventListener('dragover', (e) => handleDragOver(e, cell));
+            cell.addEventListener('dragleave', (e) => handleDragLeave(e, cell));
+            cell.addEventListener('drop', (e) => handleDrop(e, index, cell));
+
+            cell.addEventListener('click', (e) => {
+                if (e.target.closest('.delete-btn') || e.target.closest('.info-area')) return;
+                if (cell.classList.contains('cell-busy')) return;
+                const data = albums[activeCurso].slots[index];
+                if (!data.hasPhoto) {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = (eFile) => {
+                        const f = eFile.target.files[0];
+                        if (f) uploadPhoto(index, f, cell);
+                    };
+                    input.click();
+                }
             });
+
+            paintCell(cell, index);
+            return cell;
         }
 
-        function updateCellDisplay(cell, index) {
-            const data = albums[activeCurso][index];
-            const hasImage = !!data.url;
+        function paintCell(cell, index) {
+            const album = albums[activeCurso];
+            const data = album.slots[index];
+            const hasImage = !!data.hasPhoto;
             const displayName = data.name || `Alumno ${index + 1}`;
             const displayRut = data.rut || '';
 
-            // Resetear clases base
-            cell.className = `cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all aspect-[3/4] ${
-                hasImage ? 'border-slate-200 bg-white hover:shadow-md' : 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer'
+            cell.className = `cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all bg-white ${
+                hasImage ? 'border-slate-200 hover:shadow-md' : 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer'
             }`;
 
-            // Contenido dinámico
-            let innerHTML = '';
+            const positionBadge = `
+                <div class="absolute top-1.5 left-1.5 z-10 bg-blue-600 text-white text-[10px] font-bold rounded px-1.5 py-0.5 shadow">
+                    ${index + 1}
+                </div>
+            `;
 
-            if (hasImage) {
-                innerHTML = `
-                    <div class="relative w-full h-full flex-grow overflow-hidden bg-slate-100">
-                        <img src="${data.url}" alt="${displayName}" class="w-full h-full object-cover" />
-                        <button class="delete-btn absolute top-2 right-2 p-1.5 bg-red-500/80 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto">
-                            <i class="ph ph-trash text-base"></i>
+            const photoArea = hasImage
+                ? `
+                    <div class="relative w-full aspect-[3/4] overflow-hidden bg-slate-100">
+                        ${positionBadge}
+                        <img src="${photoUrl(activeCurso, index, data._v)}" alt="${displayName}" class="w-full h-full object-cover" />
+                        <button class="delete-btn absolute top-1.5 right-1.5 p-1 bg-red-500/85 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto">
+                            <i class="ph ph-trash text-sm"></i>
                         </button>
                     </div>
-                    <div class="name-area p-2 border-t border-slate-200 bg-white text-center min-h-[4rem] flex flex-col items-center justify-center">
-                        <div class="text-xs sm:text-sm font-semibold text-slate-700 truncate w-full px-1 flex items-center justify-center gap-1 cursor-text" title="Clic para editar datos">
-                            <span class="truncate name-text">${displayName}</span>
-                            <i class="ph ph-pencil-simple text-slate-400 opacity-0 group-hover:opacity-100 text-xs"></i>
-                        </div>
-                        ${displayRut ? `<div class="text-[10px] sm:text-xs text-slate-500 truncate w-full cursor-text" title="Clic para editar datos">${displayRut}</div>` : ''}
-                    </div>
-                `;
-            } else {
-                innerHTML = `
-                    <div class="relative w-full h-full flex-grow overflow-hidden bg-slate-100 flex flex-col items-center justify-center p-4">
-                        <span class="text-xs font-bold text-slate-300 absolute top-2 left-2">${index + 1}</span>
-                        <i class="ph ph-camera text-4xl mb-2 opacity-50 group-hover:opacity-100 transition-opacity text-slate-400 drop-icon"></i>
-                        <span class="text-xs text-center font-medium text-slate-400 drop-text">
-                            ${data.name ? 'Arrastra foto para' : 'Arrastra o haz clic'}
+                `
+                : `
+                    <div class="relative w-full aspect-[3/4] overflow-hidden bg-slate-100 flex flex-col items-center justify-center p-3">
+                        ${positionBadge}
+                        <i class="ph ph-camera text-3xl mb-1 text-slate-400 drop-icon"></i>
+                        <span class="text-[10px] text-center font-medium text-slate-400 drop-text">
+                            Arrastra o haz clic
                         </span>
-                        ${data.name ? `<span class="text-sm font-bold text-slate-500 mt-2 text-center line-clamp-2">${data.name}</span>` : ''}
-                        ${displayRut ? `<span class="text-xs text-slate-400 text-center mt-1">${displayRut}</span>` : ''}
-                    </div>
-                    <div class="name-area p-2 border-t border-slate-200 bg-slate-50 text-center min-h-[4rem] flex flex-col items-center justify-center">
-                        <div class="text-xs sm:text-sm font-semibold text-slate-700 truncate w-full px-1 flex items-center justify-center gap-1 cursor-text" title="Clic para editar datos">
-                            <span class="truncate name-text">${displayName}</span>
-                            <i class="ph ph-pencil-simple text-slate-400 opacity-0 group-hover:opacity-100 text-xs"></i>
-                        </div>
-                        ${displayRut ? `<div class="text-[10px] sm:text-xs text-slate-500 truncate w-full cursor-text" title="Clic para editar datos">${displayRut}</div>` : ''}
                     </div>
                 `;
-            }
 
-            cell.innerHTML = innerHTML;
+            const infoArea = `
+                <div class="info-area px-1.5 py-1.5 border-t border-slate-200 bg-white text-center cursor-text" title="Clic para editar nombre y RUT">
+                    <div class="name-text text-[10px] sm:text-[11px] font-semibold text-slate-700 leading-tight">
+                        ${escapeHtml(displayName)}
+                    </div>
+                    ${displayRut ? `<div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 leading-tight">${escapeHtml(displayRut)}</div>` : `<div class="text-[9px] text-slate-300 mt-0.5">Sin RUT</div>`}
+                </div>
+            `;
 
-            // Bind events for dynamically added buttons
+            cell.innerHTML = photoArea + infoArea;
+
             if (hasImage) {
                 cell.querySelector('.delete-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
-                    removePhoto(index);
+                    removePhoto(index, cell);
                 });
             }
-
-            // Bind event for editing name
-            const nameArea = cell.querySelector('.name-area');
-            nameArea.addEventListener('click', (e) => {
+            cell.querySelector('.info-area').addEventListener('click', (e) => {
                 e.stopPropagation();
-                startEditingName(cell, index, displayName);
+                if (cell.classList.contains('cell-busy')) return;
+                editInfo(cell, index);
             });
         }
 
-        // 3. LÓGICA DE FOTOS Y ARRASTRAR
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
         function handleDragOver(e, cell) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!cell.classList.contains('border-blue-500')) {
-                cell.classList.add('border-blue-500', 'bg-blue-50', 'scale-105', 'shadow-lg', 'z-10');
-                const dropIcon = cell.querySelector('.drop-icon');
-                const dropText = cell.querySelector('.drop-text');
-                if(dropIcon) {
-                    dropIcon.className = "ph ph-upload-simple text-4xl mb-2 text-blue-500 animate-bounce drop-icon";
-                }
-                if(dropText) {
-                    dropText.innerText = "¡Suelta la foto!";
-                }
-            }
+            e.preventDefault(); e.stopPropagation();
+            cell.classList.add('border-blue-500', 'bg-blue-50', 'scale-[1.02]', 'shadow-lg', 'z-10');
+            const dt = cell.querySelector('.drop-text');
+            const di = cell.querySelector('.drop-icon');
+            if (dt) dt.innerText = '¡Suelta la foto!';
+            if (di) di.className = 'ph ph-upload-simple text-3xl mb-1 text-blue-500 animate-bounce drop-icon';
         }
 
         function handleDragLeave(e, cell) {
-            e.preventDefault();
-            e.stopPropagation();
-            updateCellDisplay(cell, cell.dataset.index); // Restaura el estado visual normal
+            e.preventDefault(); e.stopPropagation();
+            paintCell(cell, parseInt(cell.dataset.index));
         }
 
         function handleDrop(e, index, cell) {
-            e.preventDefault();
-            e.stopPropagation();
-            
+            e.preventDefault(); e.stopPropagation();
             const files = e.dataTransfer.files;
             if (files && files.length > 0) {
-                processFile(files[0], index);
+                uploadPhoto(index, files[0], cell);
             } else {
-                updateCellDisplay(cell, index); // Restaurar visual si falló
+                paintCell(cell, index);
             }
         }
 
-        function handleFileInput(e, index) {
-            const files = e.target.files;
-            if (files && files.length > 0) {
-                processFile(files[0], index);
-            }
-        }
-
-        function processFile(file, index) {
+        async function uploadPhoto(index, file, cell) {
             if (!file.type.startsWith('image/')) {
-                alert('Por favor, sube solo archivos de imagen.');
+                toast('Solo imágenes', 'error');
+                paintCell(cell, index);
                 return;
             }
+            const album = albums[activeCurso];
+            const existingName = album.slots[index]?.name || '';
+            const fallbackName = existingName.trim() ? existingName : formatName(file.name);
 
-            const imageUrl = URL.createObjectURL(file);
-            const currentData = albums[activeCurso][index];
-            const existingName = currentData.name;
-            
-            // Prioridad: 1. Nombre de Excel (existente), 2. Formatear nombre archivo
-            const finalName = (existingName && existingName.trim() !== "") ? existingName : formatName(file.name);
-            
-            if (currentData.url) URL.revokeObjectURL(currentData.url);
-
-            albums[activeCurso][index] = {
-                url: imageUrl,
-                name: finalName,
-                originalFile: file.name
-            };
-            
-            updateFullGrid();
+            cell.classList.add('cell-busy');
+            try {
+                const form = new FormData();
+                form.append('curso', activeCurso);
+                form.append('position', String(index));
+                form.append('file', file);
+                form.append('fallbackName', fallbackName);
+                const result = await api('/api/photo', { method: 'POST', body: form });
+                album.slots[index] = { ...result.slot, _v: Date.now() };
+                if (result.size && result.size > album.size) album.size = result.size;
+            } catch (e) {
+                toast(`Error subiendo: ${e.message}`, 'error');
+            } finally {
+                cell.classList.remove('cell-busy');
+                paintCell(cell, index);
+            }
         }
 
-        function removePhoto(index) {
-            const currentData = albums[activeCurso][index];
-            if (currentData.url) URL.revokeObjectURL(currentData.url);
-            
-            // Conservamos el nombre y el RUT (podría venir del excel)
-            albums[activeCurso][index] = { ...currentData, url: null, originalFile: null };
-            updateFullGrid();
+        async function removePhoto(index, cell) {
+            cell.classList.add('cell-busy');
+            try {
+                await api(`/api/photo?curso=${encodeURIComponent(activeCurso)}&position=${index}`, { method: 'DELETE' });
+                albums[activeCurso].slots[index].hasPhoto = false;
+                albums[activeCurso].slots[index].contentType = null;
+            } catch (e) {
+                toast(`Error: ${e.message}`, 'error');
+            } finally {
+                cell.classList.remove('cell-busy');
+                paintCell(cell, index);
+            }
         }
 
-        // 4. EDICIÓN DE NOMBRES Y RUT
-        function startEditingName(cell, index, currentName) {
-            const nameArea = cell.querySelector('.name-area');
-            nameArea.innerHTML = `
-                <div class="w-full flex flex-col gap-1 px-1">
-                    <input type="text" class="edit-name w-full text-sm text-center border-b border-blue-500 focus:outline-none bg-transparent" placeholder="Nombre" value="${albums[activeCurso][index].name || ''}">
-                    <input type="text" class="edit-rut w-full text-xs text-center border-b border-blue-500 focus:outline-none bg-transparent text-slate-500" placeholder="RUT" value="${albums[activeCurso][index].rut || ''}">
+        function editInfo(cell, index) {
+            const album = albums[activeCurso];
+            const data = album.slots[index];
+            const infoArea = cell.querySelector('.info-area');
+            infoArea.innerHTML = `
+                <div class="flex flex-col gap-1 px-0.5">
+                    <input class="edit-name w-full text-[11px] text-center border-b border-blue-500 focus:outline-none bg-transparent font-semibold" placeholder="Nombre completo" value="${escapeHtml(data.name || '')}">
+                    <input class="edit-rut w-full text-[10px] text-center border-b border-blue-500 focus:outline-none bg-transparent text-slate-600" placeholder="RUT" value="${escapeHtml(data.rut || '')}">
                 </div>
             `;
-            const inputName = nameArea.querySelector('.edit-name');
-            const inputRut = nameArea.querySelector('.edit-rut');
+            const inputName = infoArea.querySelector('.edit-name');
+            const inputRut = infoArea.querySelector('.edit-rut');
             inputName.focus();
-            
-            // Mover cursor al final
             inputName.selectionStart = inputName.selectionEnd = inputName.value.length;
 
-            const saveEdit = () => {
-                albums[activeCurso][index].name = inputName.value;
-                albums[activeCurso][index].rut = inputRut.value;
-                updateCellDisplay(cell, index);
+            let saved = false;
+            const save = async () => {
+                if (saved) return;
+                saved = true;
+                const name = inputName.value;
+                const rut = inputRut.value;
+                if (name === (data.name || '') && rut === (data.rut || '')) {
+                    paintCell(cell, index);
+                    return;
+                }
+                cell.classList.add('cell-busy');
+                try {
+                    const result = await api('/api/info', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ curso: activeCurso, position: index, name, rut })
+                    });
+                    album.slots[index] = { ...album.slots[index], ...result.slot };
+                } catch (e) {
+                    toast(`Error guardando: ${e.message}`, 'error');
+                } finally {
+                    cell.classList.remove('cell-busy');
+                    paintCell(cell, index);
+                }
             };
 
             inputName.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    inputRut.focus();
-                }
+                if (e.key === 'Enter') { e.preventDefault(); inputRut.focus(); }
+                if (e.key === 'Escape') { saved = true; paintCell(cell, index); }
             });
-
             inputRut.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    saveEdit();
-                }
+                if (e.key === 'Enter') { e.preventDefault(); save(); }
+                if (e.key === 'Escape') { saved = true; paintCell(cell, index); }
             });
-
-            // Guardar al perder el foco en el contenedor de edición
-            nameArea.addEventListener('focusout', (e) => {
-                if (!nameArea.contains(e.relatedTarget)) {
-                    saveEdit();
-                }
+            infoArea.addEventListener('focusout', (e) => {
+                if (!infoArea.contains(e.relatedTarget)) save();
             });
         }
 
-        // 5. SUBIDA DE EXCEL
         btnExcel.addEventListener('click', () => excelInput.click());
 
         excelInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
             if (typeof window.XLSX === 'undefined') {
-                alert("La librería de Excel aún se está cargando. Intenta de nuevo en unos segundos.");
+                toast('Excel aún cargando, intenta de nuevo', 'error');
                 return;
             }
-
             const reader = new FileReader();
-            reader.onload = (evt) => {
+            reader.onload = async (evt) => {
                 try {
-                    const data = evt.target.result;
-                    const workbook = window.XLSX.read(data, { type: 'binary' });
-                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const rows = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    const workbook = window.XLSX.read(evt.target.result, { type: 'binary' });
+                    const ws = workbook.Sheets[workbook.SheetNames[0]];
+                    const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-                    let students = [];
-                    // Comenzamos el ciclo en i = 1 (Fila 2 del Excel) para saltar los encabezados (Fila 1)
+                    const students = [];
                     for (let i = 1; i < rows.length; i++) {
                         const row = rows[i];
-                        if (row && row.length > 0) {
-                            // Ignoramos la Columna 1 (row[0]) que es la posición/número
-                            const valRut = String(row[1] || '').trim(); // Columna 2: RUN
-                            const valNombre = String(row[2] || '').trim(); // Columna 3: Nombre
-                            
-                            // Si la fila no está vacía, agregamos al alumno
-                            if (valNombre !== "" || valRut !== "") {
-                                students.push({ name: valNombre, rut: valRut });
-                            }
-                        }
+                        if (!row || row.length === 0) continue;
+                        const valRut = String(row[1] || '').trim();
+                        const valNombre = String(row[2] || '').trim();
+                        if (valNombre || valRut) students.push({ name: valNombre, rut: valRut });
                     }
 
                     if (students.length === 0) {
-                        alert("No se encontraron nombres ni RUT a partir de la segunda fila del Excel.");
+                        toast('No se encontraron datos en el Excel', 'error');
                         return;
                     }
 
-                    // Asignar nombres y rut al curso activo
-                    students.forEach((student, i) => {
-                        if (i < 49) {
-                            albums[activeCurso][i].name = student.name;
-                            albums[activeCurso][i].rut = student.rut;
-                        }
+                    const album = albums[activeCurso];
+                    const targetSize = Math.max(album.size, students.length);
+
+                    const slots = students.map((s, i) => ({ position: i, name: s.name, rut: s.rut }));
+                    gridLoading.classList.remove('hidden');
+                    const result = await api('/api/bulk-info', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ curso: activeCurso, slots })
                     });
-
-                    updateFullGrid();
-                    excelInput.value = ""; // Resetear input
-                    alert(`¡Éxito! Se cargaron ${Math.min(students.length, 49)} registros en el curso ${activeCurso}.`);
-
-                } catch (error) {
-                    console.error(error);
-                    alert("Hubo un error al leer el archivo. Asegúrate de que sea un Excel válido (.xlsx o .xls).");
+                    if (result.slots) {
+                        album.size = result.size;
+                        album.slots = result.slots.map((s, i) => ({
+                            ...s,
+                            _v: album.slots[i]?._v || Date.now()
+                        }));
+                    }
+                    renderGrid();
+                    toast(`✓ ${students.length} alumnos cargados en ${activeCurso}`);
+                } catch (err) {
+                    console.error(err);
+                    toast(`Error Excel: ${err.message}`, 'error');
+                } finally {
+                    gridLoading.classList.add('hidden');
+                    excelInput.value = '';
                 }
             };
             reader.readAsBinaryString(file);
         });
 
-        // 6. EXPORTAR A IMAGEN (CANVAS)
+        btnAddCell.addEventListener('click', async () => {
+            try {
+                const result = await api('/api/expand', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ curso: activeCurso })
+                });
+                const album = albums[activeCurso];
+                album.size = result.size;
+                while (album.slots.length < album.size) {
+                    album.slots.push({ name: '', rut: '', hasPhoto: false, _v: 0 });
+                }
+                renderGrid();
+                toast(`Cuadro ${album.size} agregado`);
+            } catch (e) {
+                toast(`Error: ${e.message}`, 'error');
+            }
+        });
+
+        btnRemoveCell.addEventListener('click', async () => {
+            const album = albums[activeCurso];
+            if (album.size <= 49) return;
+            const last = album.slots[album.size - 1];
+            if (last.hasPhoto || last.name || last.rut) {
+                if (!confirm(`¿Quitar el último cuadro (${album.size})? Se borrará su foto y datos.`)) return;
+            }
+            try {
+                const result = await api('/api/shrink', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ curso: activeCurso })
+                });
+                album.size = result.size;
+                album.slots = album.slots.slice(0, album.size);
+                renderGrid();
+                toast(`Cuadro quitado, ahora ${album.size}`);
+            } catch (e) {
+                toast(`Error: ${e.message}`, 'error');
+            }
+        });
+
         btnDownload.addEventListener('click', async () => {
             btnDownload.disabled = true;
             btnDownload.classList.replace('bg-blue-600', 'bg-blue-400');
             btnDownload.classList.remove('hover:-translate-y-1', 'hover:shadow-xl');
             downloadIcon.classList.add('hidden');
             loadingIcon.classList.remove('hidden');
-            downloadText.innerText = "Procesando imagen...";
+            downloadText.innerText = 'Procesando…';
 
             try {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-
+                const album = albums[activeCurso];
                 const cols = 7;
-                const rows = 7;
+                const rows = Math.ceil(album.size / cols);
                 const cellW = 500;
-                const cellH = 650;
                 const imgH = 550;
-                const gap = 30;
+                const infoH = 130;
+                const cellH = imgH + infoH;
+                const gap = 25;
                 const margin = 80;
                 const headerH = 150;
 
+                const canvas = document.createElement('canvas');
                 canvas.width = (cols * cellW) + ((cols - 1) * gap) + (margin * 2);
                 canvas.height = (rows * cellH) + ((rows - 1) * gap) + (margin * 2) + headerH;
+                const ctx = canvas.getContext('2d');
 
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -445,112 +558,108 @@
                 ctx.textAlign = 'center';
                 ctx.fillText(`Cuadro de Honor - Curso ${activeCurso}`, canvas.width / 2, margin + 80);
 
-                const currentAlbum = albums[activeCurso];
-
                 const loadImage = (url) => new Promise((resolve, reject) => {
                     const img = new Image();
+                    img.crossOrigin = 'anonymous';
                     img.onload = () => resolve(img);
                     img.onerror = reject;
                     img.src = url;
                 });
 
-                for (let i = 0; i < 49; i++) {
-                    const cell = currentAlbum[i];
+                const wrapText = (text, maxWidth) => {
+                    const words = String(text).split(/\s+/).filter(Boolean);
+                    const lines = [];
+                    let current = '';
+                    for (const w of words) {
+                        const test = current ? current + ' ' + w : w;
+                        if (ctx.measureText(test).width > maxWidth && current) {
+                            lines.push(current);
+                            current = w;
+                        } else {
+                            current = test;
+                        }
+                    }
+                    if (current) lines.push(current);
+                    return lines;
+                };
+
+                for (let i = 0; i < album.size; i++) {
+                    const slot = album.slots[i];
                     const col = i % cols;
                     const row = Math.floor(i / cols);
-
                     const x = margin + (col * (cellW + gap));
                     const y = margin + headerH + (row * (cellH + gap));
 
-                    if (cell && cell.url) {
+                    if (slot && slot.hasPhoto) {
                         try {
-                            const img = await loadImage(cell.url);
-                            
-                            // Object-cover simulation
+                            const img = await loadImage(photoUrl(activeCurso, i, slot._v));
                             const imgRatio = img.width / img.height;
                             const boxRatio = cellW / imgH;
-                            let sWidth, sHeight, sx, sy;
-
+                            let sw, sh, sx, sy;
                             if (imgRatio > boxRatio) {
-                                sHeight = img.height;
-                                sWidth = sHeight * boxRatio;
-                                sx = (img.width - sWidth) / 2;
-                                sy = 0;
+                                sh = img.height; sw = sh * boxRatio;
+                                sx = (img.width - sw) / 2; sy = 0;
                             } else {
-                                sWidth = img.width;
-                                sHeight = sWidth / boxRatio;
-                                sx = 0;
-                                sy = (img.height - sHeight) / 2;
+                                sw = img.width; sh = sw / boxRatio;
+                                sx = 0; sy = (img.height - sh) / 2;
                             }
-
-                            ctx.drawImage(img, sx, sy, sWidth, sHeight, x, y, cellW, imgH);
-                            
-                            ctx.strokeStyle = '#e2e8f0';
-                            ctx.lineWidth = 4;
-                            ctx.strokeRect(x, y, cellW, imgH);
-
-                            ctx.fillStyle = '#334155';
-                            ctx.font = 'bold 32px sans-serif';
-                            ctx.textAlign = 'center';
-                            ctx.fillText(cell.name || `Alumno ${i+1}`, x + (cellW / 2), y + imgH + 45, cellW - 20);
-
-                            if (cell.rut) {
-                                ctx.fillStyle = '#64748b';
-                                ctx.font = '24px sans-serif';
-                                ctx.fillText(cell.rut, x + (cellW / 2), y + imgH + 80, cellW - 20);
-                            }
+                            ctx.drawImage(img, sx, sy, sw, sh, x, y, cellW, imgH);
                         } catch (err) {
-                            console.error("Error en imagen celda", i, err);
+                            console.error('img', i, err);
+                            ctx.fillStyle = '#fee2e2';
+                            ctx.fillRect(x, y, cellW, imgH);
                         }
                     } else {
-                        // Celdas vacías
                         ctx.fillStyle = '#f8fafc';
                         ctx.fillRect(x, y, cellW, imgH);
                         ctx.strokeStyle = '#cbd5e1';
-                        ctx.lineWidth = 4;
                         ctx.setLineDash([15, 15]);
+                        ctx.lineWidth = 4;
                         ctx.strokeRect(x, y, cellW, imgH);
-                        ctx.setLineDash([]); 
-                        
-                        ctx.fillStyle = '#94a3b8';
-                        ctx.font = 'bold 60px sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.fillText((i + 1).toString(), x + (cellW / 2), y + (imgH / 2) - 10);
-                        
-                        if (cell && cell.name) {
-                            ctx.font = 'bold 30px sans-serif';
-                            ctx.fillStyle = '#64748b';
-                            ctx.fillText(cell.name, x + (cellW / 2), y + (imgH / 2) + 30, cellW - 20);
-                            
-                            ctx.fillStyle = '#334155';
-                            ctx.font = 'bold 32px sans-serif';
-                            ctx.fillText(cell.name, x + (cellW / 2), y + imgH + 45, cellW - 20);
-                        }
+                        ctx.setLineDash([]);
+                    }
 
-                        if (cell && cell.rut) {
-                            ctx.font = '20px sans-serif';
-                            ctx.fillStyle = '#94a3b8';
-                            ctx.fillText(cell.rut, x + (cellW / 2), y + (imgH / 2) + 60, cellW - 20);
+                    ctx.strokeStyle = '#e2e8f0';
+                    ctx.lineWidth = 4;
+                    ctx.strokeRect(x, y, cellW, imgH);
 
-                            ctx.fillStyle = '#64748b';
-                            ctx.font = '24px sans-serif';
-                            ctx.fillText(cell.rut, x + (cellW / 2), y + imgH + 80, cellW - 20);
-                        }
+                    ctx.fillStyle = '#2563eb';
+                    ctx.fillRect(x + 12, y + 12, 80, 50);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 32px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(String(i + 1), x + 52, y + 48);
+
+                    ctx.fillStyle = '#334155';
+                    ctx.font = 'bold 30px sans-serif';
+                    ctx.textAlign = 'center';
+                    const name = slot?.name || `Alumno ${i + 1}`;
+                    const lines = wrapText(name, cellW - 30);
+                    const maxLines = 2;
+                    const used = lines.slice(0, maxLines);
+                    if (lines.length > maxLines) {
+                        used[maxLines - 1] = used[maxLines - 1] + '…';
+                    }
+                    used.forEach((ln, k) => {
+                        ctx.fillText(ln, x + (cellW / 2), y + imgH + 40 + (k * 36));
+                    });
+
+                    if (slot?.rut) {
+                        ctx.fillStyle = '#64748b';
+                        ctx.font = '24px sans-serif';
+                        ctx.fillText(slot.rut, x + (cellW / 2), y + imgH + 40 + (used.length * 36) + 8);
                     }
                 }
 
-                // Generar y descargar
                 const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
                 const link = document.createElement('a');
                 link.download = `Cuadro_Honor_Curso_${activeCurso}.jpg`;
                 link.href = dataUrl;
                 link.click();
-
-            } catch (error) {
-                console.error("Error exportando:", error);
-                alert("Hubo un error al generar la imagen. Revisa la consola.");
+            } catch (e) {
+                console.error(e);
+                toast(`Error al generar imagen: ${e.message}`, 'error');
             } finally {
-                // Restaurar botón
                 btnDownload.disabled = false;
                 btnDownload.classList.replace('bg-blue-400', 'bg-blue-600');
                 btnDownload.classList.add('hover:-translate-y-1', 'hover:shadow-xl');
@@ -560,11 +669,16 @@
             }
         });
 
-        // 7. INICIO
-        renderCourseButtons();
-        createGrid();
-        updateFullGrid();
+        async function init() {
+            excelCursoLabel.innerText = activeCurso;
+            sizeCursoLabel.innerText = activeCurso;
+            downloadText.innerText = `Descargar Cuadro Completo (${activeCurso})`;
+            renderCourseButtons();
+            await ensureLoaded(activeCurso);
+            renderGrid();
+        }
 
+        init();
     </script>
 </body>
 </html>

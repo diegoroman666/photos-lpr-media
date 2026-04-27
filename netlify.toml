@@ -1,0 +1,9 @@
+[build]
+  publish = "."
+
+[functions]
+  node_bundler = "esbuild"
+  directory = "netlify/functions"
+
+[functions."api"]
+  external_node_modules = ["@netlify/blobs"]
