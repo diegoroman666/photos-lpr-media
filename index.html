@@ -376,12 +376,13 @@
                     for (let i = 1; i < rows.length; i++) {
                         const row = rows[i];
                         if (row && row.length > 0) {
-                            const val0 = String(row[0] || '').trim();
-                            const val1 = String(row[1] || '').trim();
+                            // Ignoramos la Columna 1 (row[0]) que es la posición/número
+                            const valRut = String(row[1] || '').trim(); // Columna 2: RUN
+                            const valNombre = String(row[2] || '').trim(); // Columna 3: Nombre
                             
                             // Si la fila no está vacía, agregamos al alumno
-                            if (val0 !== "" || val1 !== "") {
-                                students.push({ name: val0, rut: val1 });
+                            if (valNombre !== "" || valRut !== "") {
+                                students.push({ name: valNombre, rut: valRut });
                             }
                         }
                     }
