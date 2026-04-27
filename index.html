@@ -140,6 +140,66 @@
         const photoUrl = (curso, position, v) =>
             `/api/photo?curso=${encodeURIComponent(curso)}&position=${position}&v=${v || 0}`;
 
+        // Tamaño objetivo de cada foto (carnet vertical 4:3 estándar del cuadro de honor)
+        const TARGET_W = 5568;
+        const TARGET_H = 4176;
+        const MAX_BYTES = 5 * 1024 * 1024; // 5MB para quedar bajo el límite de 6MB de Netlify
+
+        function loadImageFromFile(file) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    reject(new Error('Formato no soportado por el navegador (probá JPG o PNG)'));
+                };
+                img.src = url;
+            });
+        }
+
+        async function prepareImage(file) {
+            // Acepta cualquier formato que el navegador pueda decodificar (JPG, PNG, WEBP, GIF, BMP, etc.)
+            const img = await loadImageFromFile(file);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = TARGET_W;
+            canvas.height = TARGET_H;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, TARGET_W, TARGET_H);
+
+            // Crop centrado tipo object-cover: rellena 5568x4176 sin deformar
+            const srcRatio = img.width / img.height;
+            const dstRatio = TARGET_W / TARGET_H;
+            let sx, sy, sw, sh;
+            if (srcRatio > dstRatio) {
+                // imagen más ancha → recorta lados
+                sh = img.height;
+                sw = sh * dstRatio;
+                sx = (img.width - sw) / 2;
+                sy = 0;
+            } else {
+                // imagen más alta → recorta arriba/abajo
+                sw = img.width;
+                sh = sw / dstRatio;
+                sx = 0;
+                sy = (img.height - sh) / 2;
+            }
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, TARGET_W, TARGET_H);
+
+            // Exportar a JPEG, ajustando calidad si pesa demasiado
+            const qualities = [0.88, 0.82, 0.75, 0.68, 0.6];
+            for (const q of qualities) {
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
+                if (!blob) throw new Error('No se pudo generar la imagen');
+                if (blob.size <= MAX_BYTES) return blob;
+            }
+            // Última pasada con calidad mínima decente
+            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.55));
+            return blob;
+        }
+
         async function api(path, opts = {}) {
             const res = await fetch(path, opts);
             if (!res.ok) {
@@ -329,21 +389,25 @@
         }
 
         async function uploadPhoto(index, file, cell) {
-            if (!file.type.startsWith('image/')) {
-                toast('Solo imágenes', 'error');
-                paintCell(cell, index);
-                return;
-            }
             const album = albums[activeCurso];
             const existingName = album.slots[index]?.name || '';
             const fallbackName = existingName.trim() ? existingName : formatName(file.name);
 
             cell.classList.add('cell-busy');
             try {
+                // Procesar la imagen: ajustar a 5568x4176 (crop centrado) y comprimir a JPEG
+                let processedBlob;
+                try {
+                    processedBlob = await prepareImage(file);
+                } catch (prepErr) {
+                    throw new Error(prepErr.message || 'No se pudo procesar la imagen');
+                }
+
+                const processedFile = new File([processedBlob], 'photo.jpg', { type: 'image/jpeg' });
                 const form = new FormData();
                 form.append('curso', activeCurso);
                 form.append('position', String(index));
-                form.append('file', file);
+                form.append('file', processedFile);
                 form.append('fallbackName', fallbackName);
                 const result = await api('/api/photo', { method: 'POST', body: form });
                 album.slots[index] = { ...result.slot, _v: Date.now() };
