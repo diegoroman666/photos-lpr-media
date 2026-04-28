@@ -39,6 +39,12 @@
             border-radius: 50%; animation: spin 0.8s linear infinite; z-index: 6;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .modal-backdrop {
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 50; opacity: 0; pointer-events: none; transition: opacity .2s;
+        }
+        .modal-backdrop.show { opacity: 1; pointer-events: auto; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen flex flex-col">
@@ -82,7 +88,17 @@
                 <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
                 <p class="text-slate-500 mb-6">Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.</p>
 
-                <div id="section-tabs" class="flex flex-wrap justify-center gap-2 mb-4"></div>
+                <div id="section-tabs" class="flex flex-wrap justify-center gap-2 mb-3"></div>
+                <div class="flex justify-center mb-3">
+                    <button id="btn-total-stats" type="button"
+                        class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 text-white hover:bg-slate-700 transition-all shadow-sm"
+                        title="Ver detalle por curso">
+                        <i class="ph ph-chart-bar text-sm"></i>
+                        Total <span id="total-section-label">Media</span>:
+                        <span id="total-section-pct" class="font-bold">…</span>%
+                        <span class="opacity-70 font-normal">(<span id="total-section-with">…</span>/<span id="total-section-total">…</span>)</span>
+                    </button>
+                </div>
                 <div id="course-selector" class="flex flex-wrap justify-center gap-2"></div>
 
                 <div id="admin-actions" class="mt-6 flex flex-wrap justify-center gap-3">
@@ -143,6 +159,32 @@
                 </button>
             </div>
 
+        </div>
+    </div>
+
+    <div id="total-modal" class="modal-backdrop">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 p-6 w-full max-w-md mx-4 max-h-[85vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="ph ph-chart-bar"></i>
+                    <span>Total <span id="total-modal-section">Media</span></span>
+                </h2>
+                <button id="total-modal-close" class="p-1 rounded text-slate-400 hover:bg-slate-100" aria-label="Cerrar">
+                    <i class="ph ph-x text-xl"></i>
+                </button>
+            </div>
+            <div id="total-modal-summary" class="bg-slate-50 rounded-lg p-3 mb-4 flex items-center justify-between">
+                <div>
+                    <div class="text-xs text-slate-500">Total con foto</div>
+                    <div class="text-sm font-semibold text-slate-800"><span id="modal-total-with">0</span> de <span id="modal-total-total">0</span></div>
+                    <div class="text-xs text-slate-500 mt-1">Faltan <span id="modal-total-missing">0</span></div>
+                </div>
+                <div class="text-right">
+                    <div class="text-3xl font-bold text-emerald-600 leading-none"><span id="modal-total-pct">0</span>%</div>
+                    <div class="text-[10px] text-slate-400 uppercase tracking-wide">completado</div>
+                </div>
+            </div>
+            <div id="total-modal-content" class="space-y-2.5"></div>
         </div>
     </div>
 
@@ -229,6 +271,19 @@
         const statMissingPct = document.getElementById('stat-missing-pct');
         const statPercent = document.getElementById('stat-percent');
         const statBar = document.getElementById('stat-bar');
+        const btnTotalStats = document.getElementById('btn-total-stats');
+        const totalSectionLabel = document.getElementById('total-section-label');
+        const totalSectionPct = document.getElementById('total-section-pct');
+        const totalSectionWith = document.getElementById('total-section-with');
+        const totalSectionTotal = document.getElementById('total-section-total');
+        const totalModal = document.getElementById('total-modal');
+        const totalModalClose = document.getElementById('total-modal-close');
+        const totalModalSection = document.getElementById('total-modal-section');
+        const totalModalContent = document.getElementById('total-modal-content');
+        const modalTotalWith = document.getElementById('modal-total-with');
+        const modalTotalTotal = document.getElementById('modal-total-total');
+        const modalTotalMissing = document.getElementById('modal-total-missing');
+        const modalTotalPct = document.getElementById('modal-total-pct');
         const btnDownload = document.getElementById('btn-download');
         const downloadText = document.getElementById('download-text');
         const downloadIcon = document.getElementById('download-icon');
@@ -407,8 +462,15 @@
             renderSectionTabs();
             renderCourseButtons();
             updateLabels();
+            // Reset section total label while we load the rest
+            totalSectionLabel.textContent = sec.short;
+            totalSectionPct.textContent = '…';
+            totalSectionWith.textContent = '…';
+            totalSectionTotal.textContent = '…';
             await ensureLoaded(activeCurso);
             renderGrid();
+            // Load remaining course albums in the background for total stats
+            preloadSectionAlbums(secId);
         }
 
         function renderCourseButtons() {
@@ -443,8 +505,22 @@
         }
 
         function updateStats() {
+            // Per-course stats (active course)
             const album = albums[activeCurso];
-            if (!album) {
+            if (album) {
+                const total = album.size;
+                const withPhoto = album.slots.filter(s => s.hasPhoto).length;
+                const missing = total - withPhoto;
+                const pct = total > 0 ? Math.round((withPhoto / total) * 100) : 0;
+                const missPct = total > 0 ? Math.round((missing / total) * 100) : 0;
+                statWith.textContent = withPhoto;
+                statTotal.textContent = total;
+                statMissing.textContent = missing;
+                statMissingPct.textContent = missPct;
+                statPercent.textContent = pct;
+                statBar.style.width = `${pct}%`;
+                sizeLabel.textContent = total;
+            } else {
                 statWith.textContent = 0;
                 statTotal.textContent = 0;
                 statMissing.textContent = 0;
@@ -452,21 +528,110 @@
                 statPercent.textContent = 0;
                 statBar.style.width = '0%';
                 sizeLabel.textContent = 0;
-                return;
             }
-            const total = album.size;
-            const withPhoto = album.slots.filter(s => s.hasPhoto).length;
-            const missing = total - withPhoto;
-            const pct = total > 0 ? Math.round((withPhoto / total) * 100) : 0;
-            const missPct = total > 0 ? Math.round((missing / total) * 100) : 0;
-            statWith.textContent = withPhoto;
-            statTotal.textContent = total;
-            statMissing.textContent = missing;
-            statMissingPct.textContent = missPct;
-            statPercent.textContent = pct;
-            statBar.style.width = `${pct}%`;
-            sizeLabel.textContent = total;
+            // Section total stats
+            updateSectionTotal();
         }
+
+        function computeSectionTotals() {
+            const sec = SECTIONS[activeSection];
+            if (!sec) return null;
+            let total = 0, withPhoto = 0;
+            const perCourse = [];
+            let allLoaded = true;
+            for (const c of sec.courses) {
+                const a = albums[c.id];
+                if (!a) { allLoaded = false; continue; }
+                const cw = a.slots.filter(s => s.hasPhoto).length;
+                total += a.size;
+                withPhoto += cw;
+                perCourse.push({
+                    id: c.id,
+                    label: c.label,
+                    fullName: fullCourseName(c.id),
+                    total: a.size,
+                    withPhoto: cw,
+                    missing: a.size - cw,
+                    pct: a.size > 0 ? Math.round((cw / a.size) * 100) : 0
+                });
+            }
+            return {
+                total,
+                withPhoto,
+                missing: total - withPhoto,
+                pct: total > 0 ? Math.round((withPhoto / total) * 100) : 0,
+                perCourse,
+                allLoaded,
+                sectionLabel: sec.short
+            };
+        }
+
+        function updateSectionTotal() {
+            const stats = computeSectionTotals();
+            if (!stats) return;
+            totalSectionLabel.textContent = stats.sectionLabel;
+            if (!stats.allLoaded && stats.total === 0) {
+                totalSectionPct.textContent = '…';
+                totalSectionWith.textContent = '…';
+                totalSectionTotal.textContent = '…';
+            } else {
+                totalSectionPct.textContent = stats.pct;
+                totalSectionWith.textContent = stats.withPhoto;
+                totalSectionTotal.textContent = stats.total;
+            }
+        }
+
+        async function preloadSectionAlbums(secId) {
+            const sec = SECTIONS[secId];
+            if (!sec) return;
+            const tasks = sec.courses
+                .filter(c => !albums[c.id])
+                .map(c => loadAlbum(c.id).catch(() => {}));
+            if (tasks.length) {
+                await Promise.all(tasks);
+                updateSectionTotal();
+            }
+        }
+
+        function openTotalModal() {
+            const stats = computeSectionTotals();
+            if (!stats) return;
+            totalModalSection.textContent = stats.sectionLabel;
+            modalTotalWith.textContent = stats.withPhoto;
+            modalTotalTotal.textContent = stats.total;
+            modalTotalMissing.textContent = stats.missing;
+            modalTotalPct.textContent = stats.pct;
+            totalModalContent.innerHTML = stats.perCourse.map(c => {
+                const barColor = c.pct >= 80 ? 'bg-emerald-500' : c.pct >= 40 ? 'bg-amber-500' : 'bg-rose-500';
+                return `
+                    <div>
+                        <div class="flex justify-between items-baseline mb-1">
+                            <span class="text-xs font-semibold text-slate-700">${escapeHtml(c.fullName)}</span>
+                            <span class="text-[11px] text-slate-500">
+                                <span class="font-semibold text-slate-700">${c.withPhoto}</span>/${c.total}
+                                · faltan <span class="font-semibold text-rose-600">${c.missing}</span>
+                                · <span class="font-bold text-slate-800">${c.pct}%</span>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div class="${barColor} h-full transition-all" style="width: ${c.pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            totalModal.classList.add('show');
+        }
+
+        function closeTotalModal() {
+            totalModal.classList.remove('show');
+        }
+
+        btnTotalStats.addEventListener('click', openTotalModal);
+        totalModalClose.addEventListener('click', closeTotalModal);
+        totalModal.addEventListener('click', (e) => { if (e.target === totalModal) closeTotalModal(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && totalModal.classList.contains('show')) closeTotalModal();
+        });
 
         async function loadAlbum(curso) {
             const data = await api(`/api/album?curso=${encodeURIComponent(curso)}`);
@@ -560,13 +725,14 @@
                     </div>
                 `;
 
-            // Overlay del 25-30% inferior con gradiente: oscuro abajo → transparente arriba
+            // Placa identificatoria al pie: rectángulo negro translúcido para fotos
+            // (sin gradiente — contraste constante incluso sobre ropa blanca)
             const overlayStyle = hasImage
-                ? 'background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0) 100%); color: #ffffff; text-shadow: 0 1px 2px rgba(0,0,0,0.6);'
-                : 'background: rgba(255,255,255,0.92); color: #334155; border-top: 1px solid #e2e8f0;';
+                ? 'background: rgba(0,0,0,0.72); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); color: #ffffff; text-shadow: 0 1px 2px rgba(0,0,0,0.5); border-top: 1px solid rgba(255,255,255,0.12);'
+                : 'background: rgba(255,255,255,0.95); color: #334155; border-top: 1px solid #e2e8f0;';
 
             const infoArea = `
-                <div class="info-area absolute bottom-0 left-0 right-0 z-[2] px-1.5 pt-5 pb-1.5 text-center cursor-text"
+                <div class="info-area absolute bottom-0 left-0 right-0 z-[2] px-2 py-2 text-center cursor-text"
                      style="${overlayStyle}"
                      title="Clic para editar nombre y RUT">
                     <div class="name-text text-[10px] sm:text-[11px] font-semibold leading-tight">
@@ -574,7 +740,7 @@
                     </div>
                     ${displayRut
                         ? `<div class="text-[9px] sm:text-[10px] mt-0.5 leading-tight ${hasImage ? 'text-slate-100' : 'text-slate-500'}">${escapeHtml(displayRut)}</div>`
-                        : `<div class="text-[9px] mt-0.5 ${hasImage ? 'text-slate-300' : 'text-slate-300'}">Sin RUT</div>`
+                        : `<div class="text-[9px] mt-0.5 ${hasImage ? 'text-slate-400' : 'text-slate-300'}">Sin RUT</div>`
                     }
                 </div>
             `;
