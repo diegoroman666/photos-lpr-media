@@ -635,7 +635,8 @@
 
         async function loadAlbum(curso) {
             const data = await api(`/api/album?curso=${encodeURIComponent(curso)}`);
-            data.slots = data.slots.map(s => ({ ...s, _v: Date.now() }));
+            // _v = timestamp del servidor (photoUpdatedAt). Si no cambió, navegador reusa caché.
+            data.slots = data.slots.map(s => ({ ...s, _v: s.photoUpdatedAt || 0 }));
             albums[curso] = data;
             return data;
         }
@@ -748,6 +749,23 @@
             cell.innerHTML = photoLayer + positionBadge + deleteBtn + infoArea;
 
             if (hasImage) {
+                // Retry si la imagen no carga (cold start, glitch transitorio, etc.)
+                const imgEl = cell.querySelector('img');
+                if (imgEl) {
+                    let retries = 0;
+                    const baseSrc = photoUrl(activeCurso, index, data._v);
+                    imgEl.addEventListener('error', () => {
+                        if (retries < 2) {
+                            retries++;
+                            setTimeout(() => {
+                                imgEl.src = `${baseSrc}&r=${Date.now()}`;
+                            }, 400 * retries);
+                        } else {
+                            imgEl.style.opacity = '0.25';
+                            imgEl.title = 'No se pudo cargar la foto, intenta refrescar la página';
+                        }
+                    });
+                }
                 cell.querySelector('.delete-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     removePhoto(index, cell);
@@ -839,7 +857,7 @@
                 form.append('file', processed);
                 form.append('fallbackName', fallbackName);
                 const result = await api('/api/photo', { method: 'POST', body: form });
-                album.slots[index] = { ...result.slot, _v: Date.now() };
+                album.slots[index] = { ...result.slot, _v: result.slot.photoUpdatedAt || Date.now() };
                 if (result.size && result.size > album.size) album.size = result.size;
             } catch (e) {
                 toast(`Error subiendo: ${e.message}`, 'error');

@@ -35,7 +35,7 @@ const stores = () => ({
   photos: getStore(PHOTO_STORE)
 });
 
-const emptySlot = () => ({ name: '', rut: '', hasPhoto: false, contentType: null });
+const emptySlot = () => ({ name: '', rut: '', hasPhoto: false, contentType: null, photoUpdatedAt: 0 });
 
 async function loadMeta(curso) {
   const { meta } = stores();
@@ -227,7 +227,9 @@ export default async (request) => {
         status: 200,
         headers: {
           'content-type': result.metadata?.contentType || 'image/jpeg',
-          'cache-control': 'private, max-age=30'
+          // URL viene versionada con ?v=<photoUpdatedAt>; al cambiar la foto cambia el timestamp y la URL.
+          // Esto permite caché agresivo del navegador sin riesgo de servir imágenes viejas.
+          'cache-control': 'public, max-age=2592000'
         }
       });
     }
@@ -249,6 +251,7 @@ export default async (request) => {
       ensureSize(meta, pos);
       meta.slots[pos].hasPhoto = true;
       meta.slots[pos].contentType = contentType;
+      meta.slots[pos].photoUpdatedAt = Date.now();
       const fallbackName = String(parsedForm.get('fallbackName') || '').trim();
       if (fallbackName && !meta.slots[pos].name) {
         meta.slots[pos].name = fallbackName;
