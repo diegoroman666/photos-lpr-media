@@ -39,19 +39,35 @@
             border-radius: 50%; animation: spin 0.8s linear infinite; z-index: 6;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .modal-backdrop {
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 50; opacity: 0; pointer-events: none; transition: opacity .2s;
+        }
+        .modal-backdrop.show { opacity: 1; pointer-events: auto; }
+        .admin-only.hidden-visitor { display: none !important; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen p-4 md:p-8">
 
     <div class="max-w-7xl mx-auto space-y-6">
 
-        <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 text-center">
+        <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 text-center relative">
+            <div class="absolute top-4 right-4 flex items-center gap-3 text-sm">
+                <span id="auth-status" class="text-slate-500"></span>
+                <button id="btn-login" class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-all">
+                    <i class="ph ph-sign-in"></i> Ingresar
+                </button>
+                <button id="btn-logout" class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all hidden">
+                    <i class="ph ph-sign-out"></i> Cerrar sesión
+                </button>
+            </div>
             <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
-            <p class="text-slate-500 mb-6">Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.</p>
+            <p id="header-subtitle" class="text-slate-500 mb-6">Cuadro de honor por curso.</p>
 
             <div id="course-selector" class="flex flex-wrap justify-center gap-2"></div>
 
-            <div class="mt-6 flex flex-wrap justify-center gap-3">
+            <div id="admin-actions" class="admin-only mt-6 flex flex-wrap justify-center gap-3">
                 <input type="file" id="excel-input" accept=".xlsx, .xls, .csv" class="hidden" />
                 <button id="btn-excel" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-sm transition-all">
                     <i class="ph ph-file-text text-xl"></i>
@@ -83,7 +99,7 @@
             </div>
         </div>
 
-        <div class="flex justify-center pt-2 pb-8">
+        <div id="download-wrapper" class="admin-only flex justify-center pt-2 pb-8">
             <button id="btn-download" class="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all bg-blue-600 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-1">
                 <i class="ph ph-download-simple text-2xl" id="download-icon"></i>
                 <i class="ph ph-spinner animate-spin text-2xl hidden" id="loading-icon"></i>
@@ -91,6 +107,27 @@
             </button>
         </div>
 
+    </div>
+
+    <div id="login-modal" class="modal-backdrop">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 p-6 w-full max-w-sm mx-4">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2"><i class="ph ph-sign-in"></i> Ingresar</h2>
+                <button id="login-close" class="p-1 rounded text-slate-400 hover:bg-slate-100" aria-label="Cerrar"><i class="ph ph-x text-xl"></i></button>
+            </div>
+            <form id="login-form" class="flex flex-col gap-3">
+                <label class="text-xs font-semibold text-slate-600">Usuario
+                    <input type="text" id="login-user" autocomplete="username" required class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                </label>
+                <label class="text-xs font-semibold text-slate-600">Contraseña
+                    <input type="password" id="login-pass" autocomplete="current-password" required class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                </label>
+                <div id="login-error" class="text-xs text-red-600 hidden"></div>
+                <button type="submit" id="login-submit" class="mt-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition-all">
+                    Entrar
+                </button>
+            </form>
+        </div>
     </div>
 
     <div id="toast" class="toast"></div>
@@ -119,6 +156,20 @@
         const btnAddCell = document.getElementById('btn-add-cell');
         const btnRemoveCell = document.getElementById('btn-remove-cell');
         const toastEl = document.getElementById('toast');
+        const headerSubtitle = document.getElementById('header-subtitle');
+        const authStatus = document.getElementById('auth-status');
+        const btnLogin = document.getElementById('btn-login');
+        const btnLogout = document.getElementById('btn-logout');
+        const loginModal = document.getElementById('login-modal');
+        const loginForm = document.getElementById('login-form');
+        const loginUser = document.getElementById('login-user');
+        const loginPass = document.getElementById('login-pass');
+        const loginError = document.getElementById('login-error');
+        const loginClose = document.getElementById('login-close');
+        const adminOnlyEls = () => document.querySelectorAll('.admin-only');
+
+        let currentUser = null;
+        const isAdmin = () => !!currentUser;
 
         let toastTimer = null;
         function toast(msg, kind = '') {
@@ -202,6 +253,14 @@
 
         async function api(path, opts = {}) {
             const res = await fetch(path, opts);
+            if (res.status === 401) {
+                if (currentUser !== null) {
+                    currentUser = null;
+                    applyAuthUI();
+                    toast('Sesión expirada, ingresa nuevamente', 'error');
+                }
+                throw new Error('No autorizado');
+            }
             if (!res.ok) {
                 let detail = '';
                 try { detail = (await res.json()).error || ''; } catch {}
@@ -211,6 +270,102 @@
             if (ct.includes('application/json')) return res.json();
             return res;
         }
+
+        async function fetchMe() {
+            try {
+                const r = await fetch('/api/me');
+                if (!r.ok) return null;
+                const data = await r.json();
+                return data.user || null;
+            } catch { return null; }
+        }
+
+        function applyAuthUI() {
+            if (isAdmin()) {
+                adminOnlyEls().forEach(el => el.classList.remove('hidden-visitor'));
+                btnLogin.classList.add('hidden');
+                btnLogout.classList.remove('hidden');
+                authStatus.textContent = `Sesión: ${currentUser}`;
+                headerSubtitle.textContent = 'Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.';
+            } else {
+                adminOnlyEls().forEach(el => el.classList.add('hidden-visitor'));
+                btnLogin.classList.remove('hidden');
+                btnLogout.classList.add('hidden');
+                authStatus.textContent = 'Modo visualización';
+                headerSubtitle.textContent = 'Selecciona un curso para ver el cuadro de honor.';
+            }
+            // Re-render grid with new permissions
+            if (albums[activeCurso]) renderGrid();
+        }
+
+        function openLoginModal() {
+            loginError.classList.add('hidden');
+            loginError.textContent = '';
+            loginUser.value = '';
+            loginPass.value = '';
+            loginModal.classList.add('show');
+            setTimeout(() => loginUser.focus(), 50);
+        }
+        function closeLoginModal() {
+            loginModal.classList.remove('show');
+        }
+
+        async function doLogin(user, password) {
+            loginError.classList.add('hidden');
+            try {
+                const r = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ user, password })
+                });
+                if (r.status === 401) {
+                    loginError.textContent = 'Usuario o contraseña incorrectos';
+                    loginError.classList.remove('hidden');
+                    return false;
+                }
+                if (!r.ok) {
+                    loginError.textContent = `Error: HTTP ${r.status}`;
+                    loginError.classList.remove('hidden');
+                    return false;
+                }
+                const data = await r.json();
+                currentUser = data.user;
+                applyAuthUI();
+                closeLoginModal();
+                toast(`Bienvenido, ${currentUser}`);
+                return true;
+            } catch (e) {
+                loginError.textContent = e.message || 'Error de red';
+                loginError.classList.remove('hidden');
+                return false;
+            }
+        }
+
+        async function doLogout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+            } catch {}
+            currentUser = null;
+            applyAuthUI();
+            toast('Sesión cerrada');
+        }
+
+        btnLogin.addEventListener('click', openLoginModal);
+        btnLogout.addEventListener('click', doLogout);
+        loginClose.addEventListener('click', closeLoginModal);
+        loginModal.addEventListener('click', (e) => { if (e.target === loginModal) closeLoginModal(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && loginModal.classList.contains('show')) closeLoginModal();
+        });
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submit = document.getElementById('login-submit');
+            submit.disabled = true;
+            submit.textContent = 'Ingresando…';
+            await doLogin(loginUser.value, loginPass.value);
+            submit.disabled = false;
+            submit.textContent = 'Entrar';
+        });
 
         async function loadAlbum(curso) {
             const data = await api(`/api/album?curso=${encodeURIComponent(curso)}`);
@@ -275,25 +430,27 @@
             cell.dataset.index = index;
             cell.className = 'cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all bg-white';
 
-            cell.addEventListener('dragover', (e) => handleDragOver(e, cell));
-            cell.addEventListener('dragleave', (e) => handleDragLeave(e, cell));
-            cell.addEventListener('drop', (e) => handleDrop(e, index, cell));
+            if (isAdmin()) {
+                cell.addEventListener('dragover', (e) => handleDragOver(e, cell));
+                cell.addEventListener('dragleave', (e) => handleDragLeave(e, cell));
+                cell.addEventListener('drop', (e) => handleDrop(e, index, cell));
 
-            cell.addEventListener('click', (e) => {
-                if (e.target.closest('.delete-btn') || e.target.closest('.info-area')) return;
-                if (cell.classList.contains('cell-busy')) return;
-                const data = albums[activeCurso].slots[index];
-                if (!data.hasPhoto) {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = 'image/*';
-                    input.onchange = (eFile) => {
-                        const f = eFile.target.files[0];
-                        if (f) uploadPhoto(index, f, cell);
-                    };
-                    input.click();
-                }
-            });
+                cell.addEventListener('click', (e) => {
+                    if (e.target.closest('.delete-btn') || e.target.closest('.info-area')) return;
+                    if (cell.classList.contains('cell-busy')) return;
+                    const data = albums[activeCurso].slots[index];
+                    if (!data.hasPhoto) {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.onchange = (eFile) => {
+                            const f = eFile.target.files[0];
+                            if (f) uploadPhoto(index, f, cell);
+                        };
+                        input.click();
+                    }
+                });
+            }
 
             paintCell(cell, index);
             return cell;
@@ -303,11 +460,12 @@
             const album = albums[activeCurso];
             const data = album.slots[index];
             const hasImage = !!data.hasPhoto;
-            const displayName = data.name || `Alumno ${index + 1}`;
+            const admin = isAdmin();
+            const displayName = data.name || (admin ? `Alumno ${index + 1}` : '—');
             const displayRut = data.rut || '';
 
             cell.className = `cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all bg-white ${
-                hasImage ? 'border-slate-200 hover:shadow-md' : 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer'
+                hasImage ? 'border-slate-200 hover:shadow-md' : (admin ? 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer' : 'border-slate-200 bg-slate-50')
             }`;
 
             const positionBadge = `
@@ -316,48 +474,54 @@
                 </div>
             `;
 
+            const deleteBtn = (admin && hasImage)
+                ? `<button class="delete-btn absolute top-1.5 right-1.5 p-1 bg-red-500/85 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto"><i class="ph ph-trash text-sm"></i></button>`
+                : '';
+
             const photoArea = hasImage
                 ? `
                     <div class="relative w-full aspect-[3/4] overflow-hidden bg-slate-100">
                         ${positionBadge}
-                        <img src="${photoUrl(activeCurso, index, data._v)}" alt="${displayName}" class="w-full h-full object-cover" />
-                        <button class="delete-btn absolute top-1.5 right-1.5 p-1 bg-red-500/85 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto">
-                            <i class="ph ph-trash text-sm"></i>
-                        </button>
+                        <img src="${photoUrl(activeCurso, index, data._v)}" alt="${escapeHtml(displayName)}" class="w-full h-full object-cover" />
+                        ${deleteBtn}
                     </div>
                 `
                 : `
                     <div class="relative w-full aspect-[3/4] overflow-hidden bg-slate-100 flex flex-col items-center justify-center p-3">
                         ${positionBadge}
-                        <i class="ph ph-camera text-3xl mb-1 text-slate-400 drop-icon"></i>
-                        <span class="text-[10px] text-center font-medium text-slate-400 drop-text">
-                            Arrastra o haz clic
-                        </span>
+                        ${admin
+                            ? `<i class="ph ph-camera text-3xl mb-1 text-slate-400 drop-icon"></i>
+                               <span class="text-[10px] text-center font-medium text-slate-400 drop-text">Arrastra o haz clic</span>`
+                            : `<i class="ph ph-user text-3xl text-slate-300"></i>
+                               <span class="text-[10px] text-slate-300 mt-1">Sin foto</span>`
+                        }
                     </div>
                 `;
 
             const infoArea = `
-                <div class="info-area px-1.5 py-1.5 border-t border-slate-200 bg-white text-center cursor-text" title="Clic para editar nombre y RUT">
+                <div class="info-area px-1.5 py-1.5 border-t border-slate-200 bg-white text-center ${admin ? 'cursor-text' : ''}" ${admin ? 'title="Clic para editar nombre y RUT"' : ''}>
                     <div class="name-text text-[10px] sm:text-[11px] font-semibold text-slate-700 leading-tight">
                         ${escapeHtml(displayName)}
                     </div>
-                    ${displayRut ? `<div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 leading-tight">${escapeHtml(displayRut)}</div>` : `<div class="text-[9px] text-slate-300 mt-0.5">Sin RUT</div>`}
+                    ${displayRut ? `<div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 leading-tight">${escapeHtml(displayRut)}</div>` : (admin ? `<div class="text-[9px] text-slate-300 mt-0.5">Sin RUT</div>` : '')}
                 </div>
             `;
 
             cell.innerHTML = photoArea + infoArea;
 
-            if (hasImage) {
+            if (admin && hasImage) {
                 cell.querySelector('.delete-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     removePhoto(index, cell);
                 });
             }
-            cell.querySelector('.info-area').addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (cell.classList.contains('cell-busy')) return;
-                editInfo(cell, index);
-            });
+            if (admin) {
+                cell.querySelector('.info-area').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (cell.classList.contains('cell-busy')) return;
+                    editInfo(cell, index);
+                });
+            }
         }
 
         function escapeHtml(s) {
@@ -737,6 +901,8 @@
             excelCursoLabel.innerText = activeCurso;
             sizeCursoLabel.innerText = activeCurso;
             downloadText.innerText = `Descargar Cuadro Completo (${activeCurso})`;
+            currentUser = await fetchMe();
+            applyAuthUI();
             renderCourseButtons();
             await ensureLoaded(activeCurso);
             renderGrid();
