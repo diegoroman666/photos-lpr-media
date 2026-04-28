@@ -1168,39 +1168,41 @@
                         ctx.fillRect(x, plateY, cellW, 1);
                     }
 
-                    // Texto dentro de la placa
+                    // Texto dentro de la placa — layout anclado desde arriba con padding fijo
                     const nameColor = isFilled ? '#ffffff' : '#1e293b';
                     const rutColor  = isFilled ? 'rgba(255,255,255,0.85)' : '#64748b';
                     const name = slot?.name || `Alumno ${i + 1}`;
 
-                    const nameFontSize = 28;
-                    const rutFontSize  = 22;
-                    const lineH = 36;
+                    const nameFontSize = 26;
+                    const rutFontSize  = 21;
+                    const lineH = 32;
                     const hasRut = !!slot?.rut;
 
-                    // Medir el wrap con la fuente correcta
+                    // Medir wrap con la fuente correcta
                     ctx.font = `bold ${nameFontSize}px sans-serif`;
-                    const lines = wrapText(name, cellW - 30);
+                    const lines = wrapText(name, cellW - 24);
                     const used = lines.slice(0, 2);
                     if (lines.length > 2) used[1] = used[1] + '…';
 
-                    // Calcular altura total del bloque de texto
+                    // Calcular altura total: nombre(s) + RUT
                     const nameBlockH = used.length * lineH;
-                    const rutBlockH  = hasRut ? (rutFontSize + 12) : 0;
+                    const rutBlockH  = hasRut ? rutFontSize + 6 : 0;
                     const totalH = nameBlockH + rutBlockH;
 
-                    // Centrar verticalmente dentro de la placa
-                    const baseY = plateY + Math.round((plateH - totalH) / 2) + Math.round(nameFontSize * 0.8);
+                    // Centrar el bloque dentro de la placa
+                    const padTop = Math.round((plateH - totalH) / 2);
+                    // firstY = baseline de la primera línea de nombre
+                    const firstY = plateY + padTop + nameFontSize;
 
                     ctx.fillStyle = nameColor;
                     ctx.textAlign = 'center';
                     if (isFilled) {
-                        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                        ctx.shadowColor = 'rgba(0,0,0,0.6)';
                         ctx.shadowOffsetY = 1;
                         ctx.shadowBlur = 2;
                     }
                     used.forEach((ln, k) => {
-                        ctx.fillText(ln, x + cellW / 2, baseY + k * lineH);
+                        ctx.fillText(ln, x + cellW / 2, firstY + k * lineH);
                     });
                     ctx.shadowColor = 'transparent';
                     ctx.shadowOffsetY = 0;
@@ -1209,8 +1211,9 @@
                     if (hasRut) {
                         ctx.fillStyle = rutColor;
                         ctx.font = `${rutFontSize}px sans-serif`;
-                        // RUT va justo debajo del bloque de nombres, con 8px de margen
-                        ctx.fillText(slot.rut, x + cellW / 2, baseY + nameBlockH + Math.round(rutFontSize * 0.8) + 8);
+                        // baseline del RUT = debajo del último nombre + 6px + ascent del RUT
+                        const rutY = firstY + nameBlockH - lineH + lineH + rutFontSize + 2;
+                        ctx.fillText(slot.rut, x + cellW / 2, rutY);
                     }
                 }
 
