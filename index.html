@@ -1214,11 +1214,20 @@
                     }
                 }
 
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                const link = document.createElement('a');
-                link.download = `Cuadro_Honor_${fullCourseName(activeCurso).replace(/[^\w]+/g, '_')}.jpg`;
-                link.href = dataUrl;
-                link.click();
+                await new Promise((resolve, reject) => {
+                    canvas.toBlob((blob) => {
+                        if (!blob) { reject(new Error('No se pudo generar la imagen')); return; }
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.download = `Cuadro_Honor_${fullCourseName(activeCurso).replace(/[^\w]+/g, '_')}.jpg`;
+                        link.href = url;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        resolve();
+                    }, 'image/jpeg', 0.85);
+                });
             } catch (e) {
                 console.error(e);
                 toast(`Error al generar imagen: ${e.message}`, 'error');
