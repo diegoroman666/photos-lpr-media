@@ -109,11 +109,29 @@
                         <span>Cargando curso…</span>
                     </div>
                 </div>
+
+                <div class="mb-5">
+                    <div class="flex items-center justify-between flex-wrap gap-3 mb-2">
+                        <div>
+                            <h3 id="grid-title" class="font-bold text-slate-800 text-lg leading-tight"></h3>
+                            <p class="text-xs text-slate-500 mt-0.5">
+                                <span id="stat-with">0</span> de <span id="stat-total">49</span> con foto
+                                · <span id="size-label">49</span> cuadros
+                                · faltan <span id="stat-missing">49</span> (<span id="stat-missing-pct">100</span>%)
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-3xl font-bold text-emerald-600 leading-none"><span id="stat-percent">0</span>%</div>
+                            <div class="text-[10px] text-slate-400 uppercase tracking-wide">completado</div>
+                        </div>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div id="stat-bar" class="bg-gradient-to-r from-emerald-500 to-emerald-400 h-full transition-all duration-500 ease-out" style="width: 0%"></div>
+                    </div>
+                </div>
+
                 <div class="min-w-[800px]">
                     <div id="grid-container" class="grid grid-cols-7 gap-3"></div>
-                </div>
-                <div class="text-center text-xs text-slate-400 mt-4">
-                    <span id="size-label">49</span> cuadros · <span id="size-curso-label"></span>
                 </div>
             </div>
 
@@ -204,7 +222,13 @@
         const btnExcel = document.getElementById('btn-excel');
         const excelCursoLabel = document.getElementById('excel-curso-label');
         const sizeLabel = document.getElementById('size-label');
-        const sizeCursoLabel = document.getElementById('size-curso-label');
+        const gridTitle = document.getElementById('grid-title');
+        const statWith = document.getElementById('stat-with');
+        const statTotal = document.getElementById('stat-total');
+        const statMissing = document.getElementById('stat-missing');
+        const statMissingPct = document.getElementById('stat-missing-pct');
+        const statPercent = document.getElementById('stat-percent');
+        const statBar = document.getElementById('stat-bar');
         const btnDownload = document.getElementById('btn-download');
         const downloadText = document.getElementById('download-text');
         const downloadIcon = document.getElementById('download-icon');
@@ -414,8 +438,34 @@
         function updateLabels() {
             const full = fullCourseName(activeCurso);
             excelCursoLabel.textContent = full;
-            sizeCursoLabel.textContent = full;
+            gridTitle.textContent = full;
             downloadText.textContent = `Descargar Cuadro Completo (${full})`;
+        }
+
+        function updateStats() {
+            const album = albums[activeCurso];
+            if (!album) {
+                statWith.textContent = 0;
+                statTotal.textContent = 0;
+                statMissing.textContent = 0;
+                statMissingPct.textContent = 0;
+                statPercent.textContent = 0;
+                statBar.style.width = '0%';
+                sizeLabel.textContent = 0;
+                return;
+            }
+            const total = album.size;
+            const withPhoto = album.slots.filter(s => s.hasPhoto).length;
+            const missing = total - withPhoto;
+            const pct = total > 0 ? Math.round((withPhoto / total) * 100) : 0;
+            const missPct = total > 0 ? Math.round((missing / total) * 100) : 0;
+            statWith.textContent = withPhoto;
+            statTotal.textContent = total;
+            statMissing.textContent = missing;
+            statMissingPct.textContent = missPct;
+            statPercent.textContent = pct;
+            statBar.style.width = `${pct}%`;
+            sizeLabel.textContent = total;
         }
 
         async function loadAlbum(curso) {
@@ -441,12 +491,12 @@
         function renderGrid() {
             const album = albums[activeCurso];
             if (!album) return;
-            sizeLabel.innerText = album.size;
             btnRemoveCell.classList.toggle('hidden', album.size <= 49);
             gridContainer.innerHTML = '';
             for (let i = 0; i < album.size; i++) {
                 gridContainer.appendChild(buildCell(i));
             }
+            updateStats();
         }
 
         function buildCell(index) {
@@ -485,8 +535,10 @@
             const displayName = data.name || `Alumno ${index + 1}`;
             const displayRut = data.rut || '';
 
-            cell.className = `cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all bg-white ${
-                hasImage ? 'border-slate-200 hover:shadow-md' : 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer'
+            cell.className = `cell-wrapper relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all group ${
+                hasImage
+                    ? 'border-slate-200 bg-slate-100 hover:shadow-lg'
+                    : 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer'
             }`;
 
             const positionBadge = `
@@ -495,36 +547,39 @@
                 </div>
             `;
 
-            const photoArea = hasImage
-                ? `
-                    <div class="relative w-full aspect-[3/4] overflow-hidden bg-slate-100">
-                        ${positionBadge}
-                        <img src="${photoUrl(activeCurso, index, data._v)}" alt="${escapeHtml(displayName)}" class="w-full h-full object-cover" />
-                        <button class="delete-btn absolute top-1.5 right-1.5 p-1 bg-red-500/85 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto">
-                            <i class="ph ph-trash text-sm"></i>
-                        </button>
-                    </div>
-                `
+            const deleteBtn = hasImage
+                ? `<button class="delete-btn absolute top-1.5 right-1.5 z-10 p-1 bg-red-500/85 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto"><i class="ph ph-trash text-sm"></i></button>`
+                : '';
+
+            const photoLayer = hasImage
+                ? `<img src="${photoUrl(activeCurso, index, data._v)}" alt="${escapeHtml(displayName)}" class="absolute inset-0 w-full h-full object-cover" />`
                 : `
-                    <div class="relative w-full aspect-[3/4] overflow-hidden bg-slate-100 flex flex-col items-center justify-center p-3">
-                        ${positionBadge}
+                    <div class="absolute inset-0 flex flex-col items-center justify-center pb-[28%] p-3">
                         <i class="ph ph-camera text-3xl mb-1 text-slate-400 drop-icon"></i>
-                        <span class="text-[10px] text-center font-medium text-slate-400 drop-text">
-                            Arrastra o haz clic
-                        </span>
+                        <span class="text-[10px] text-center font-medium text-slate-400 drop-text">Arrastra o haz clic</span>
                     </div>
                 `;
 
+            // Overlay del 25-30% inferior con gradiente: oscuro abajo → transparente arriba
+            const overlayStyle = hasImage
+                ? 'background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0) 100%); color: #ffffff; text-shadow: 0 1px 2px rgba(0,0,0,0.6);'
+                : 'background: rgba(255,255,255,0.92); color: #334155; border-top: 1px solid #e2e8f0;';
+
             const infoArea = `
-                <div class="info-area px-1.5 py-1.5 border-t border-slate-200 bg-white text-center cursor-text" title="Clic para editar nombre y RUT">
-                    <div class="name-text text-[10px] sm:text-[11px] font-semibold text-slate-700 leading-tight">
+                <div class="info-area absolute bottom-0 left-0 right-0 z-[2] px-1.5 pt-5 pb-1.5 text-center cursor-text"
+                     style="${overlayStyle}"
+                     title="Clic para editar nombre y RUT">
+                    <div class="name-text text-[10px] sm:text-[11px] font-semibold leading-tight">
                         ${escapeHtml(displayName)}
                     </div>
-                    ${displayRut ? `<div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 leading-tight">${escapeHtml(displayRut)}</div>` : `<div class="text-[9px] text-slate-300 mt-0.5">Sin RUT</div>`}
+                    ${displayRut
+                        ? `<div class="text-[9px] sm:text-[10px] mt-0.5 leading-tight ${hasImage ? 'text-slate-100' : 'text-slate-500'}">${escapeHtml(displayRut)}</div>`
+                        : `<div class="text-[9px] mt-0.5 ${hasImage ? 'text-slate-300' : 'text-slate-300'}">Sin RUT</div>`
+                    }
                 </div>
             `;
 
-            cell.innerHTML = photoArea + infoArea;
+            cell.innerHTML = photoLayer + positionBadge + deleteBtn + infoArea;
 
             if (hasImage) {
                 cell.querySelector('.delete-btn').addEventListener('click', (e) => {
@@ -625,6 +680,7 @@
             } finally {
                 cell.classList.remove('cell-busy');
                 paintCell(cell, index);
+                updateStats();
             }
         }
 
@@ -639,6 +695,7 @@
             } finally {
                 cell.classList.remove('cell-busy');
                 paintCell(cell, index);
+                updateStats();
             }
         }
 
@@ -646,9 +703,14 @@
             const album = albums[activeCurso];
             const data = album.slots[index];
             const infoArea = cell.querySelector('.info-area');
+            // Override styling so inputs are clearly visible regardless of cell state
+            infoArea.style.background = 'rgba(255,255,255,0.96)';
+            infoArea.style.color = '#0f172a';
+            infoArea.style.textShadow = 'none';
+            infoArea.style.borderTop = '1px solid #cbd5e1';
             infoArea.innerHTML = `
                 <div class="flex flex-col gap-1 px-0.5">
-                    <input class="edit-name w-full text-[11px] text-center border-b border-blue-500 focus:outline-none bg-transparent font-semibold" placeholder="Nombre completo" value="${escapeHtml(data.name || '')}">
+                    <input class="edit-name w-full text-[11px] text-center border-b border-blue-500 focus:outline-none bg-transparent font-semibold text-slate-800" placeholder="Nombre completo" value="${escapeHtml(data.name || '')}">
                     <input class="edit-rut w-full text-[10px] text-center border-b border-blue-500 focus:outline-none bg-transparent text-slate-600" placeholder="RUT" value="${escapeHtml(data.rut || '')}">
                 </div>
             `;
