@@ -20,6 +20,16 @@ const META_STORE = 'album-meta';
 const PHOTO_STORE = 'album-photos';
 const SESSION_DAYS = 7;
 
+const COURSE_SECTIONS = {
+  '1A': 'media', '1B': 'media', '1C': 'media',
+  '2A': 'media', '2B': 'media', '2C': 'media',
+  '3A': 'media', '3B': 'media', '3C': 'media',
+  '4A': 'media', '4B': 'media',
+  'KINDER': 'basica',
+  'B1': 'basica', 'B2': 'basica', 'B3': 'basica', 'B4': 'basica',
+  'B5': 'basica', 'B6': 'basica', 'B7': 'basica', 'B8': 'basica'
+};
+
 const stores = () => ({
   meta: getStore(META_STORE),
   photos: getStore(PHOTO_STORE)
@@ -90,33 +100,54 @@ function parseCookies(request) {
   return out;
 }
 
+function loadUsers() {
+  const raw = process.env.AUTH_USERS;
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(u => u && u.user && u.pass && Array.isArray(u.sections));
+  } catch {
+    return [];
+  }
+}
+
+function findUser(username) {
+  return loadUsers().find(u => u.user === username) || null;
+}
+
 function getUser(request) {
   const secret = process.env.AUTH_SECRET;
   if (!secret) return null;
   const cookies = parseCookies(request);
   const payload = verifyToken(cookies.auth, secret);
-  return payload ? payload.u : null;
+  if (!payload) return null;
+  const u = findUser(payload.u);
+  if (!u) return null;
+  return { user: u.user, sections: u.sections };
 }
 
 function timingSafeStrEqual(a, b) {
-  const ab = Buffer.from(String(a), 'utf8');
-  const bb = Buffer.from(String(b), 'utf8');
-  // Hash to equalize length and avoid leaking length info
-  const ah = crypto.createHash('sha256').update(ab).digest();
-  const bh = crypto.createHash('sha256').update(bb).digest();
+  const ah = crypto.createHash('sha256').update(String(a), 'utf8').digest();
+  const bh = crypto.createHash('sha256').update(String(b), 'utf8').digest();
   return crypto.timingSafeEqual(ah, bh);
 }
 
 function authCookie(token, maxAgeSec) {
-  const parts = [
+  return [
     `auth=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
     'Secure',
     'SameSite=Lax',
     `Max-Age=${maxAgeSec}`
-  ];
-  return parts.join('; ');
+  ].join('; ');
+}
+
+function userCanAccessCurso(user, curso) {
+  const sec = COURSE_SECTIONS[curso];
+  if (!sec) return false;
+  return user.sections.includes(sec);
 }
 
 // ---------- HELPERS ----------
@@ -129,37 +160,34 @@ const json = (data, status = 200, extraHeaders = {}) =>
 
 const err = (msg, status = 400) => json({ error: msg }, status);
 
-const PROTECTED = new Set([
-  'POST:photo', 'DELETE:photo',
-  'POST:info', 'POST:bulk-info',
-  'POST:expand', 'POST:shrink'
-]);
-
 // ---------- ROUTER ----------
 
 export default async (request) => {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\//, '').replace(/\/+$/, '');
   const method = request.method;
-  const routeKey = `${method}:${path}`;
 
   try {
-    // Auth routes
+    // --- Public auth-related endpoints ---
     if (path === 'me' && method === 'GET') {
       const user = getUser(request);
-      return json({ user });
+      if (!user) return json({ user: null, sections: [] });
+      return json({ user: user.user, sections: user.sections });
     }
 
     if (path === 'login' && method === 'POST') {
-      const { ADMIN_USER, ADMIN_PASS, AUTH_SECRET } = process.env;
-      if (!ADMIN_USER || !ADMIN_PASS || !AUTH_SECRET) return err('auth not configured', 500);
+      const secret = process.env.AUTH_SECRET;
+      if (!secret) return err('auth not configured', 500);
       const body = await request.json().catch(() => ({}));
-      const userOk = timingSafeStrEqual(body.user || '', ADMIN_USER);
-      const passOk = timingSafeStrEqual(body.password || '', ADMIN_PASS);
-      if (!userOk || !passOk) return err('credenciales inválidas', 401);
+      const username = String(body.user || '').trim();
+      const password = String(body.password || '');
+      const u = findUser(username);
+      // Always run timingSafeStrEqual on something to keep timing similar
+      const passOk = u ? timingSafeStrEqual(password, u.pass) : timingSafeStrEqual(password, 'x');
+      if (!u || !passOk) return err('credenciales inválidas', 401);
       const exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400;
-      const token = signToken({ u: ADMIN_USER, exp }, AUTH_SECRET);
-      return json({ ok: true, user: ADMIN_USER }, 200, {
+      const token = signToken({ u: u.user, exp }, secret);
+      return json({ ok: true, user: u.user, sections: u.sections }, 200, {
         'set-cookie': authCookie(token, SESSION_DAYS * 86400)
       });
     }
@@ -170,23 +198,28 @@ export default async (request) => {
       });
     }
 
-    // Gate write endpoints
-    if (PROTECTED.has(routeKey)) {
-      const user = getUser(request);
-      if (!user) return err('unauthorized', 401);
-    }
+    // --- Everything below requires auth ---
+    const user = getUser(request);
+    if (!user) return err('unauthorized', 401);
 
-    // Public reads
+    // For curso-related endpoints, check section access
+    const cursoFromQuery = url.searchParams.get('curso');
+    let cursoFromBody = null;
+    let parsedBody = null;
+    let parsedForm = null;
+
     if (path === 'album' && method === 'GET') {
-      const curso = url.searchParams.get('curso');
+      const curso = cursoFromQuery;
       if (!curso) return err('curso required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
       return json(await loadMeta(curso));
     }
 
     if (path === 'photo' && method === 'GET') {
-      const curso = url.searchParams.get('curso');
+      const curso = cursoFromQuery;
       const pos = parseInt(url.searchParams.get('position'));
       if (!curso || Number.isNaN(pos)) return err('curso and position required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
       const { photos } = stores();
       const result = await photos.getWithMetadata(`photo:${curso}:${pos}`, { type: 'arrayBuffer' });
       if (!result) return new Response('not found', { status: 404 });
@@ -199,13 +232,13 @@ export default async (request) => {
       });
     }
 
-    // Protected writes
     if (path === 'photo' && method === 'POST') {
-      const form = await request.formData();
-      const curso = form.get('curso');
-      const pos = parseInt(form.get('position'));
-      const file = form.get('file');
+      parsedForm = await request.formData();
+      const curso = parsedForm.get('curso');
+      const pos = parseInt(parsedForm.get('position'));
+      const file = parsedForm.get('file');
       if (!curso || Number.isNaN(pos) || !file) return err('curso, position and file required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
 
       const buffer = await file.arrayBuffer();
       const contentType = file.type || 'image/jpeg';
@@ -216,7 +249,7 @@ export default async (request) => {
       ensureSize(meta, pos);
       meta.slots[pos].hasPhoto = true;
       meta.slots[pos].contentType = contentType;
-      const fallbackName = String(form.get('fallbackName') || '').trim();
+      const fallbackName = String(parsedForm.get('fallbackName') || '').trim();
       if (fallbackName && !meta.slots[pos].name) {
         meta.slots[pos].name = fallbackName;
       }
@@ -225,9 +258,10 @@ export default async (request) => {
     }
 
     if (path === 'photo' && method === 'DELETE') {
-      const curso = url.searchParams.get('curso');
+      const curso = cursoFromQuery;
       const pos = parseInt(url.searchParams.get('position'));
       if (!curso || Number.isNaN(pos)) return err('curso and position required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
       const { photos } = stores();
       await photos.delete(`photo:${curso}:${pos}`);
       const meta = await loadMeta(curso);
@@ -240,9 +274,10 @@ export default async (request) => {
     }
 
     if (path === 'info' && method === 'POST') {
-      const body = await request.json();
-      const { curso, position, name, rut } = body;
+      parsedBody = await request.json();
+      const { curso, position, name, rut } = parsedBody;
       if (!curso || typeof position !== 'number') return err('curso and position required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
       const meta = await loadMeta(curso);
       ensureSize(meta, position);
       if (name !== undefined) meta.slots[position].name = String(name).trim();
@@ -252,9 +287,10 @@ export default async (request) => {
     }
 
     if (path === 'bulk-info' && method === 'POST') {
-      const body = await request.json();
-      const { curso, slots } = body;
+      parsedBody = await request.json();
+      const { curso, slots } = parsedBody;
       if (!curso || !Array.isArray(slots)) return err('curso and slots[] required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
       const meta = await loadMeta(curso);
       for (const s of slots) {
         if (typeof s.position !== 'number') continue;
@@ -267,9 +303,10 @@ export default async (request) => {
     }
 
     if (path === 'expand' && method === 'POST') {
-      const body = await request.json();
-      const { curso } = body;
+      parsedBody = await request.json();
+      const { curso } = parsedBody;
       if (!curso) return err('curso required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
       const meta = await loadMeta(curso);
       meta.slots.push(emptySlot());
       meta.size = meta.slots.length;
@@ -278,9 +315,10 @@ export default async (request) => {
     }
 
     if (path === 'shrink' && method === 'POST') {
-      const body = await request.json();
-      const { curso } = body;
+      parsedBody = await request.json();
+      const { curso } = parsedBody;
       if (!curso) return err('curso required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
       const meta = await loadMeta(curso);
       if (meta.slots.length <= DEFAULT_SIZE) return json({ ok: true, size: meta.size });
       const last = meta.slots.length - 1;

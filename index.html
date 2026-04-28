@@ -39,87 +39,25 @@
             border-radius: 50%; animation: spin 0.8s linear infinite; z-index: 6;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .modal-backdrop {
-            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5);
-            display: flex; align-items: center; justify-content: center;
-            z-index: 50; opacity: 0; pointer-events: none; transition: opacity .2s;
-        }
-        .modal-backdrop.show { opacity: 1; pointer-events: auto; }
-        .admin-only.hidden-visitor { display: none !important; }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen p-4 md:p-8">
+<body class="bg-slate-50 min-h-screen flex flex-col">
 
-    <div class="max-w-7xl mx-auto space-y-6">
-
-        <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 text-center relative">
-            <div class="absolute top-4 right-4 flex items-center gap-3 text-sm">
-                <span id="auth-status" class="text-slate-500"></span>
-                <button id="btn-login" class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-all">
-                    <i class="ph ph-sign-in"></i> Ingresar
-                </button>
-                <button id="btn-logout" class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all hidden">
-                    <i class="ph ph-sign-out"></i> Cerrar sesión
-                </button>
-            </div>
-            <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
-            <p id="header-subtitle" class="text-slate-500 mb-6">Cuadro de honor por curso.</p>
-
-            <div id="course-selector" class="flex flex-wrap justify-center gap-2"></div>
-
-            <div id="admin-actions" class="admin-only mt-6 flex flex-wrap justify-center gap-3">
-                <input type="file" id="excel-input" accept=".xlsx, .xls, .csv" class="hidden" />
-                <button id="btn-excel" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-sm transition-all">
-                    <i class="ph ph-file-text text-xl"></i>
-                    Adjuntar Excel (<span id="excel-curso-label">1A</span>)
-                </button>
-                <button id="btn-add-cell" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-sm transition-all">
-                    <i class="ph ph-plus-square text-xl"></i>
-                    Agregar Cuadro
-                </button>
-                <button id="btn-remove-cell" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 shadow-sm transition-all hidden">
-                    <i class="ph ph-minus-square text-xl"></i>
-                    Quitar último
-                </button>
-            </div>
-        </header>
-
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-x-auto no-scrollbar relative">
-            <div id="grid-loading" class="absolute inset-0 flex items-center justify-center bg-white/80 z-10 hidden">
-                <div class="flex items-center gap-3 text-slate-600">
-                    <i class="ph ph-spinner animate-spin text-2xl"></i>
-                    <span>Cargando curso…</span>
-                </div>
-            </div>
-            <div class="min-w-[800px]">
-                <div id="grid-container" class="grid grid-cols-7 gap-3"></div>
-            </div>
-            <div class="text-center text-xs text-slate-400 mt-4">
-                <span id="size-label">49</span> cuadros · curso <span id="size-curso-label">1A</span>
-            </div>
-        </div>
-
-        <div id="download-wrapper" class="admin-only flex justify-center pt-2 pb-8">
-            <button id="btn-download" class="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all bg-blue-600 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-1">
-                <i class="ph ph-download-simple text-2xl" id="download-icon"></i>
-                <i class="ph ph-spinner animate-spin text-2xl hidden" id="loading-icon"></i>
-                <span id="download-text">Descargar Cuadro Completo (1A)</span>
-            </button>
-        </div>
-
-    </div>
-
-    <div id="login-modal" class="modal-backdrop">
-        <div class="bg-white rounded-xl shadow-xl border border-slate-200 p-6 w-full max-w-sm mx-4">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2"><i class="ph ph-sign-in"></i> Ingresar</h2>
-                <button id="login-close" class="p-1 rounded text-slate-400 hover:bg-slate-100" aria-label="Cerrar"><i class="ph ph-x text-xl"></i></button>
+    <!-- LOGIN VIEW -->
+    <div id="login-view" class="flex-grow flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 w-full max-w-md">
+            <div class="text-center mb-6">
+                <i class="ph ph-graduation-cap text-5xl text-blue-600"></i>
+                <h1 class="text-2xl font-bold text-slate-800 mt-2">Cuadro de Honor</h1>
+                <p class="text-slate-500 text-sm mt-1">Inicia sesión para continuar</p>
             </div>
             <form id="login-form" class="flex flex-col gap-3">
-                <label class="text-xs font-semibold text-slate-600">Usuario
+                <label class="text-xs font-semibold text-slate-600">
+                    Usuario
                     <input type="text" id="login-user" autocomplete="username" required class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
                 </label>
-                <label class="text-xs font-semibold text-slate-600">Contraseña
+                <label class="text-xs font-semibold text-slate-600">
+                    Contraseña
                     <input type="password" id="login-pass" autocomplete="current-password" required class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
                 </label>
                 <div id="login-error" class="text-xs text-red-600 hidden"></div>
@@ -130,17 +68,135 @@
         </div>
     </div>
 
+    <!-- APP VIEW (post-login) -->
+    <div id="app-view" class="hidden flex-grow">
+        <div class="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
+
+            <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 text-center relative">
+                <div class="absolute top-4 right-4 flex items-center gap-3 text-sm">
+                    <span id="auth-status" class="text-slate-500 hidden md:inline"></span>
+                    <button id="btn-logout" class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all">
+                        <i class="ph ph-sign-out"></i> Cerrar sesión
+                    </button>
+                </div>
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
+                <p class="text-slate-500 mb-6">Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.</p>
+
+                <div id="section-tabs" class="flex flex-wrap justify-center gap-2 mb-4"></div>
+                <div id="course-selector" class="flex flex-wrap justify-center gap-2"></div>
+
+                <div id="admin-actions" class="mt-6 flex flex-wrap justify-center gap-3">
+                    <input type="file" id="excel-input" accept=".xlsx, .xls, .csv" class="hidden" />
+                    <button id="btn-excel" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-sm transition-all">
+                        <i class="ph ph-file-text text-xl"></i>
+                        Adjuntar Excel (<span id="excel-curso-label"></span>)
+                    </button>
+                    <button id="btn-add-cell" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-sm transition-all">
+                        <i class="ph ph-plus-square text-xl"></i>
+                        Agregar Cuadro
+                    </button>
+                    <button id="btn-remove-cell" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 shadow-sm transition-all hidden">
+                        <i class="ph ph-minus-square text-xl"></i>
+                        Quitar último
+                    </button>
+                </div>
+            </header>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-x-auto no-scrollbar relative">
+                <div id="grid-loading" class="absolute inset-0 flex items-center justify-center bg-white/80 z-10 hidden">
+                    <div class="flex items-center gap-3 text-slate-600">
+                        <i class="ph ph-spinner animate-spin text-2xl"></i>
+                        <span>Cargando curso…</span>
+                    </div>
+                </div>
+                <div class="min-w-[800px]">
+                    <div id="grid-container" class="grid grid-cols-7 gap-3"></div>
+                </div>
+                <div class="text-center text-xs text-slate-400 mt-4">
+                    <span id="size-label">49</span> cuadros · <span id="size-curso-label"></span>
+                </div>
+            </div>
+
+            <div class="flex justify-center pt-2 pb-4">
+                <button id="btn-download" class="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all bg-blue-600 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-1">
+                    <i class="ph ph-download-simple text-2xl" id="download-icon"></i>
+                    <i class="ph ph-spinner animate-spin text-2xl hidden" id="loading-icon"></i>
+                    <span id="download-text">Descargar Cuadro Completo</span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <footer class="text-center text-xs text-slate-400 py-4 border-t border-slate-200 mt-auto">
+        Sitio desarrollado por Diego Román · 2026 · Derechos reservados
+    </footer>
+
     <div id="toast" class="toast"></div>
 
     <script>
-        const CURSOS = ['1A', '1B', '1C', '2A', '2B', '2C', '3A', '3B', '4A', '4B'];
-        let activeCurso = localStorage.getItem('activeCurso') || '1A';
-        if (!CURSOS.includes(activeCurso)) activeCurso = '1A';
+        // ==================== CONSTANTS ====================
+        const SECTIONS = {
+            media: {
+                id: 'media',
+                label: 'Enseñanza Media',
+                short: 'Media',
+                icon: 'ph-student',
+                courses: [
+                    { id: '1A', label: '1°A' }, { id: '1B', label: '1°B' }, { id: '1C', label: '1°C' },
+                    { id: '2A', label: '2°A' }, { id: '2B', label: '2°B' }, { id: '2C', label: '2°C' },
+                    { id: '3A', label: '3°A' }, { id: '3B', label: '3°B' }, { id: '3C', label: '3°C' },
+                    { id: '4A', label: '4°A' }, { id: '4B', label: '4°B' }
+                ],
+                fullName: (id) => {
+                    const grade = id[0];
+                    const letter = id[1];
+                    return `${grade}°${letter} Medio`;
+                }
+            },
+            basica: {
+                id: 'basica',
+                label: 'Enseñanza Básica',
+                short: 'Básica',
+                icon: 'ph-baby',
+                courses: [
+                    { id: 'KINDER', label: 'Kínder' },
+                    { id: 'B1', label: '1°' }, { id: 'B2', label: '2°' },
+                    { id: 'B3', label: '3°' }, { id: 'B4', label: '4°' },
+                    { id: 'B5', label: '5°' }, { id: 'B6', label: '6°' },
+                    { id: 'B7', label: '7°' }, { id: 'B8', label: '8°' }
+                ],
+                fullName: (id) => {
+                    if (id === 'KINDER') return 'Kínder';
+                    return `${id.slice(1)}° Básico`;
+                }
+            }
+        };
 
-        // albums[curso] = { size, slots: [{name, rut, hasPhoto, contentType, _v}] }
-        const albums = {};
-        CURSOS.forEach(c => { albums[c] = null; });
+        const SECTION_OF_COURSE = {};
+        Object.values(SECTIONS).forEach(sec => sec.courses.forEach(c => SECTION_OF_COURSE[c.id] = sec.id));
 
+        const TARGET_W = 5568;
+        const TARGET_H = 4176;
+        const MAX_BYTES = 5 * 1024 * 1024;
+
+        // ==================== STATE ====================
+        let currentUser = null; // { user, sections }
+        let activeSection = null;
+        let activeCurso = null;
+        const albums = {}; // { courseId: { size, slots } } — loaded on demand
+
+        // ==================== DOM ====================
+        const loginView = document.getElementById('login-view');
+        const appView = document.getElementById('app-view');
+        const loginForm = document.getElementById('login-form');
+        const loginUser = document.getElementById('login-user');
+        const loginPass = document.getElementById('login-pass');
+        const loginError = document.getElementById('login-error');
+        const loginSubmit = document.getElementById('login-submit');
+        const btnLogout = document.getElementById('btn-logout');
+        const authStatus = document.getElementById('auth-status');
+        const sectionTabs = document.getElementById('section-tabs');
         const courseSelector = document.getElementById('course-selector');
         const gridContainer = document.getElementById('grid-container');
         const gridLoading = document.getElementById('grid-loading');
@@ -156,21 +212,8 @@
         const btnAddCell = document.getElementById('btn-add-cell');
         const btnRemoveCell = document.getElementById('btn-remove-cell');
         const toastEl = document.getElementById('toast');
-        const headerSubtitle = document.getElementById('header-subtitle');
-        const authStatus = document.getElementById('auth-status');
-        const btnLogin = document.getElementById('btn-login');
-        const btnLogout = document.getElementById('btn-logout');
-        const loginModal = document.getElementById('login-modal');
-        const loginForm = document.getElementById('login-form');
-        const loginUser = document.getElementById('login-user');
-        const loginPass = document.getElementById('login-pass');
-        const loginError = document.getElementById('login-error');
-        const loginClose = document.getElementById('login-close');
-        const adminOnlyEls = () => document.querySelectorAll('.admin-only');
 
-        let currentUser = null;
-        const isAdmin = () => !!currentUser;
-
+        // ==================== HELPERS ====================
         let toastTimer = null;
         function toast(msg, kind = '') {
             toastEl.textContent = msg;
@@ -179,76 +222,23 @@
             toastTimer = setTimeout(() => { toastEl.className = `toast ${kind}`; }, 2500);
         }
 
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
         function formatName(filename) {
             if (!filename) return '';
             const noExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
-            return noExt.replace(/[-_]/g, ' ').split(' ')
-                .filter(Boolean)
-                .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-                .join(' ');
+            return noExt.replace(/[-_]/g, ' ').split(' ').filter(Boolean)
+                .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
         }
 
         const photoUrl = (curso, position, v) =>
             `/api/photo?curso=${encodeURIComponent(curso)}&position=${position}&v=${v || 0}`;
 
-        // Tamaño objetivo de cada foto (carnet vertical 4:3 estándar del cuadro de honor)
-        const TARGET_W = 5568;
-        const TARGET_H = 4176;
-        const MAX_BYTES = 5 * 1024 * 1024; // 5MB para quedar bajo el límite de 6MB de Netlify
-
-        function loadImageFromFile(file) {
-            return new Promise((resolve, reject) => {
-                const url = URL.createObjectURL(file);
-                const img = new Image();
-                img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-                img.onerror = () => {
-                    URL.revokeObjectURL(url);
-                    reject(new Error('Formato no soportado por el navegador (probá JPG o PNG)'));
-                };
-                img.src = url;
-            });
-        }
-
-        async function prepareImage(file) {
-            // Acepta cualquier formato que el navegador pueda decodificar (JPG, PNG, WEBP, GIF, BMP, etc.)
-            const img = await loadImageFromFile(file);
-
-            const canvas = document.createElement('canvas');
-            canvas.width = TARGET_W;
-            canvas.height = TARGET_H;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, TARGET_W, TARGET_H);
-
-            // Crop centrado tipo object-cover: rellena 5568x4176 sin deformar
-            const srcRatio = img.width / img.height;
-            const dstRatio = TARGET_W / TARGET_H;
-            let sx, sy, sw, sh;
-            if (srcRatio > dstRatio) {
-                // imagen más ancha → recorta lados
-                sh = img.height;
-                sw = sh * dstRatio;
-                sx = (img.width - sw) / 2;
-                sy = 0;
-            } else {
-                // imagen más alta → recorta arriba/abajo
-                sw = img.width;
-                sh = sw / dstRatio;
-                sx = 0;
-                sy = (img.height - sh) / 2;
-            }
-            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, TARGET_W, TARGET_H);
-
-            // Exportar a JPEG, ajustando calidad si pesa demasiado
-            const qualities = [0.88, 0.82, 0.75, 0.68, 0.6];
-            for (const q of qualities) {
-                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
-                if (!blob) throw new Error('No se pudo generar la imagen');
-                if (blob.size <= MAX_BYTES) return blob;
-            }
-            // Última pasada con calidad mínima decente
-            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.55));
-            return blob;
+        function fullCourseName(courseId) {
+            const sec = SECTIONS[SECTION_OF_COURSE[courseId]];
+            return sec ? sec.fullName(courseId) : courseId;
         }
 
         async function api(path, opts = {}) {
@@ -256,10 +246,13 @@
             if (res.status === 401) {
                 if (currentUser !== null) {
                     currentUser = null;
-                    applyAuthUI();
+                    showLoginView();
                     toast('Sesión expirada, ingresa nuevamente', 'error');
                 }
                 throw new Error('No autorizado');
+            }
+            if (res.status === 403) {
+                throw new Error('Sin permiso para este recurso');
             }
             if (!res.ok) {
                 let detail = '';
@@ -271,47 +264,21 @@
             return res;
         }
 
+        // ==================== AUTH ====================
         async function fetchMe() {
             try {
                 const r = await fetch('/api/me');
                 if (!r.ok) return null;
                 const data = await r.json();
-                return data.user || null;
+                if (!data.user) return null;
+                return { user: data.user, sections: data.sections || [] };
             } catch { return null; }
-        }
-
-        function applyAuthUI() {
-            if (isAdmin()) {
-                adminOnlyEls().forEach(el => el.classList.remove('hidden-visitor'));
-                btnLogin.classList.add('hidden');
-                btnLogout.classList.remove('hidden');
-                authStatus.textContent = `Sesión: ${currentUser}`;
-                headerSubtitle.textContent = 'Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.';
-            } else {
-                adminOnlyEls().forEach(el => el.classList.add('hidden-visitor'));
-                btnLogin.classList.remove('hidden');
-                btnLogout.classList.add('hidden');
-                authStatus.textContent = 'Modo visualización';
-                headerSubtitle.textContent = 'Selecciona un curso para ver el cuadro de honor.';
-            }
-            // Re-render grid with new permissions
-            if (albums[activeCurso]) renderGrid();
-        }
-
-        function openLoginModal() {
-            loginError.classList.add('hidden');
-            loginError.textContent = '';
-            loginUser.value = '';
-            loginPass.value = '';
-            loginModal.classList.add('show');
-            setTimeout(() => loginUser.focus(), 50);
-        }
-        function closeLoginModal() {
-            loginModal.classList.remove('show');
         }
 
         async function doLogin(user, password) {
             loginError.classList.add('hidden');
+            loginSubmit.disabled = true;
+            loginSubmit.textContent = 'Ingresando…';
             try {
                 const r = await fetch('/api/login', {
                     method: 'POST',
@@ -324,79 +291,138 @@
                     return false;
                 }
                 if (!r.ok) {
-                    loginError.textContent = `Error: HTTP ${r.status}`;
+                    const detail = await r.json().catch(() => ({}));
+                    loginError.textContent = detail.error || `Error: HTTP ${r.status}`;
                     loginError.classList.remove('hidden');
                     return false;
                 }
                 const data = await r.json();
-                currentUser = data.user;
-                applyAuthUI();
-                closeLoginModal();
-                toast(`Bienvenido, ${currentUser}`);
+                currentUser = { user: data.user, sections: data.sections || [] };
+                await enterApp();
                 return true;
             } catch (e) {
                 loginError.textContent = e.message || 'Error de red';
                 loginError.classList.remove('hidden');
                 return false;
+            } finally {
+                loginSubmit.disabled = false;
+                loginSubmit.textContent = 'Entrar';
             }
         }
 
         async function doLogout() {
-            try {
-                await fetch('/api/logout', { method: 'POST' });
-            } catch {}
+            try { await fetch('/api/logout', { method: 'POST' }); } catch {}
             currentUser = null;
-            applyAuthUI();
+            // Wipe in-memory data so next login starts clean
+            for (const k of Object.keys(albums)) delete albums[k];
+            showLoginView();
             toast('Sesión cerrada');
         }
 
-        btnLogin.addEventListener('click', openLoginModal);
-        btnLogout.addEventListener('click', doLogout);
-        loginClose.addEventListener('click', closeLoginModal);
-        loginModal.addEventListener('click', (e) => { if (e.target === loginModal) closeLoginModal(); });
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && loginModal.classList.contains('show')) closeLoginModal();
-        });
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const submit = document.getElementById('login-submit');
-            submit.disabled = true;
-            submit.textContent = 'Ingresando…';
-            await doLogin(loginUser.value, loginPass.value);
-            submit.disabled = false;
-            submit.textContent = 'Entrar';
-        });
+        function showLoginView() {
+            appView.classList.add('hidden');
+            loginView.classList.remove('hidden');
+            loginPass.value = '';
+            loginError.classList.add('hidden');
+            setTimeout(() => loginUser.focus(), 50);
+        }
+
+        async function enterApp() {
+            loginView.classList.add('hidden');
+            appView.classList.remove('hidden');
+            authStatus.textContent = `Sesión: ${currentUser.user}`;
+
+            // Determine sections accessible
+            const accessible = currentUser.sections.filter(s => SECTIONS[s]);
+            if (accessible.length === 0) {
+                toast('Tu usuario no tiene secciones asignadas', 'error');
+                return;
+            }
+
+            // Restore active section from storage if still accessible, else first
+            const savedSection = localStorage.getItem('activeSection');
+            activeSection = (savedSection && accessible.includes(savedSection)) ? savedSection : accessible[0];
+
+            renderSectionTabs();
+            await switchSection(activeSection);
+        }
+
+        // ==================== RENDER ====================
+        function renderSectionTabs() {
+            sectionTabs.innerHTML = '';
+            const accessible = currentUser.sections.filter(s => SECTIONS[s]);
+            // Always show the section name. If multiple accessible, render as toggleable buttons.
+            accessible.forEach(secId => {
+                const sec = SECTIONS[secId];
+                const btn = document.createElement('button');
+                const isActive = secId === activeSection;
+                btn.className = `flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-all ${
+                    isActive
+                        ? 'bg-slate-800 text-white shadow-md'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`;
+                btn.innerHTML = `<i class="ph ${sec.icon}"></i> ${sec.label}`;
+                btn.disabled = accessible.length === 1; // visual indicator only
+                btn.style.cursor = accessible.length === 1 ? 'default' : 'pointer';
+                if (accessible.length > 1) {
+                    btn.onclick = () => switchSection(secId);
+                }
+                sectionTabs.appendChild(btn);
+            });
+        }
+
+        async function switchSection(secId) {
+            activeSection = secId;
+            localStorage.setItem('activeSection', secId);
+            const sec = SECTIONS[secId];
+            // Restore active course for this section
+            const savedCurso = localStorage.getItem(`activeCurso_${secId}`);
+            const validIds = sec.courses.map(c => c.id);
+            activeCurso = (savedCurso && validIds.includes(savedCurso)) ? savedCurso : sec.courses[0].id;
+
+            renderSectionTabs();
+            renderCourseButtons();
+            updateLabels();
+            await ensureLoaded(activeCurso);
+            renderGrid();
+        }
+
+        function renderCourseButtons() {
+            courseSelector.innerHTML = '';
+            const sec = SECTIONS[activeSection];
+            sec.courses.forEach(c => {
+                const btn = document.createElement('button');
+                btn.innerText = c.label;
+                btn.className = `px-4 py-2 rounded-lg font-semibold transition-all ${
+                    activeCurso === c.id
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`;
+                btn.onclick = async () => {
+                    if (c.id === activeCurso) return;
+                    activeCurso = c.id;
+                    localStorage.setItem(`activeCurso_${activeSection}`, c.id);
+                    updateLabels();
+                    renderCourseButtons();
+                    await ensureLoaded(activeCurso);
+                    renderGrid();
+                };
+                courseSelector.appendChild(btn);
+            });
+        }
+
+        function updateLabels() {
+            const full = fullCourseName(activeCurso);
+            excelCursoLabel.textContent = full;
+            sizeCursoLabel.textContent = full;
+            downloadText.textContent = `Descargar Cuadro Completo (${full})`;
+        }
 
         async function loadAlbum(curso) {
             const data = await api(`/api/album?curso=${encodeURIComponent(curso)}`);
             data.slots = data.slots.map(s => ({ ...s, _v: Date.now() }));
             albums[curso] = data;
             return data;
-        }
-
-        function renderCourseButtons() {
-            courseSelector.innerHTML = '';
-            CURSOS.forEach(curso => {
-                const btn = document.createElement('button');
-                btn.innerText = curso;
-                btn.className = `px-4 py-2 rounded-lg font-semibold transition-all ${
-                    activeCurso === curso
-                        ? 'bg-blue-600 text-white shadow-md'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`;
-                btn.onclick = async () => {
-                    if (curso === activeCurso) return;
-                    activeCurso = curso;
-                    localStorage.setItem('activeCurso', curso);
-                    excelCursoLabel.innerText = curso;
-                    sizeCursoLabel.innerText = curso;
-                    downloadText.innerText = `Descargar Cuadro Completo (${curso})`;
-                    renderCourseButtons();
-                    await ensureLoaded(curso);
-                    renderGrid();
-                };
-                courseSelector.appendChild(btn);
-            });
         }
 
         async function ensureLoaded(curso) {
@@ -417,11 +443,9 @@
             if (!album) return;
             sizeLabel.innerText = album.size;
             btnRemoveCell.classList.toggle('hidden', album.size <= 49);
-
             gridContainer.innerHTML = '';
             for (let i = 0; i < album.size; i++) {
-                const cell = buildCell(i);
-                gridContainer.appendChild(cell);
+                gridContainer.appendChild(buildCell(i));
             }
         }
 
@@ -430,27 +454,25 @@
             cell.dataset.index = index;
             cell.className = 'cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all bg-white';
 
-            if (isAdmin()) {
-                cell.addEventListener('dragover', (e) => handleDragOver(e, cell));
-                cell.addEventListener('dragleave', (e) => handleDragLeave(e, cell));
-                cell.addEventListener('drop', (e) => handleDrop(e, index, cell));
+            cell.addEventListener('dragover', (e) => handleDragOver(e, cell));
+            cell.addEventListener('dragleave', (e) => handleDragLeave(e, cell));
+            cell.addEventListener('drop', (e) => handleDrop(e, index, cell));
 
-                cell.addEventListener('click', (e) => {
-                    if (e.target.closest('.delete-btn') || e.target.closest('.info-area')) return;
-                    if (cell.classList.contains('cell-busy')) return;
-                    const data = albums[activeCurso].slots[index];
-                    if (!data.hasPhoto) {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = 'image/*';
-                        input.onchange = (eFile) => {
-                            const f = eFile.target.files[0];
-                            if (f) uploadPhoto(index, f, cell);
-                        };
-                        input.click();
-                    }
-                });
-            }
+            cell.addEventListener('click', (e) => {
+                if (e.target.closest('.delete-btn') || e.target.closest('.info-area')) return;
+                if (cell.classList.contains('cell-busy')) return;
+                const data = albums[activeCurso].slots[index];
+                if (!data.hasPhoto) {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = (eFile) => {
+                        const f = eFile.target.files[0];
+                        if (f) uploadPhoto(index, f, cell);
+                    };
+                    input.click();
+                }
+            });
 
             paintCell(cell, index);
             return cell;
@@ -460,12 +482,11 @@
             const album = albums[activeCurso];
             const data = album.slots[index];
             const hasImage = !!data.hasPhoto;
-            const admin = isAdmin();
-            const displayName = data.name || (admin ? `Alumno ${index + 1}` : '—');
+            const displayName = data.name || `Alumno ${index + 1}`;
             const displayRut = data.rut || '';
 
             cell.className = `cell-wrapper relative flex flex-col group rounded-lg overflow-hidden border-2 transition-all bg-white ${
-                hasImage ? 'border-slate-200 hover:shadow-md' : (admin ? 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer' : 'border-slate-200 bg-slate-50')
+                hasImage ? 'border-slate-200 hover:shadow-md' : 'border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer'
             }`;
 
             const positionBadge = `
@@ -474,60 +495,95 @@
                 </div>
             `;
 
-            const deleteBtn = (admin && hasImage)
-                ? `<button class="delete-btn absolute top-1.5 right-1.5 p-1 bg-red-500/85 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto"><i class="ph ph-trash text-sm"></i></button>`
-                : '';
-
             const photoArea = hasImage
                 ? `
                     <div class="relative w-full aspect-[3/4] overflow-hidden bg-slate-100">
                         ${positionBadge}
                         <img src="${photoUrl(activeCurso, index, data._v)}" alt="${escapeHtml(displayName)}" class="w-full h-full object-cover" />
-                        ${deleteBtn}
+                        <button class="delete-btn absolute top-1.5 right-1.5 p-1 bg-red-500/85 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto">
+                            <i class="ph ph-trash text-sm"></i>
+                        </button>
                     </div>
                 `
                 : `
                     <div class="relative w-full aspect-[3/4] overflow-hidden bg-slate-100 flex flex-col items-center justify-center p-3">
                         ${positionBadge}
-                        ${admin
-                            ? `<i class="ph ph-camera text-3xl mb-1 text-slate-400 drop-icon"></i>
-                               <span class="text-[10px] text-center font-medium text-slate-400 drop-text">Arrastra o haz clic</span>`
-                            : `<i class="ph ph-user text-3xl text-slate-300"></i>
-                               <span class="text-[10px] text-slate-300 mt-1">Sin foto</span>`
-                        }
+                        <i class="ph ph-camera text-3xl mb-1 text-slate-400 drop-icon"></i>
+                        <span class="text-[10px] text-center font-medium text-slate-400 drop-text">
+                            Arrastra o haz clic
+                        </span>
                     </div>
                 `;
 
             const infoArea = `
-                <div class="info-area px-1.5 py-1.5 border-t border-slate-200 bg-white text-center ${admin ? 'cursor-text' : ''}" ${admin ? 'title="Clic para editar nombre y RUT"' : ''}>
+                <div class="info-area px-1.5 py-1.5 border-t border-slate-200 bg-white text-center cursor-text" title="Clic para editar nombre y RUT">
                     <div class="name-text text-[10px] sm:text-[11px] font-semibold text-slate-700 leading-tight">
                         ${escapeHtml(displayName)}
                     </div>
-                    ${displayRut ? `<div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 leading-tight">${escapeHtml(displayRut)}</div>` : (admin ? `<div class="text-[9px] text-slate-300 mt-0.5">Sin RUT</div>` : '')}
+                    ${displayRut ? `<div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 leading-tight">${escapeHtml(displayRut)}</div>` : `<div class="text-[9px] text-slate-300 mt-0.5">Sin RUT</div>`}
                 </div>
             `;
 
             cell.innerHTML = photoArea + infoArea;
 
-            if (admin && hasImage) {
+            if (hasImage) {
                 cell.querySelector('.delete-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     removePhoto(index, cell);
                 });
             }
-            if (admin) {
-                cell.querySelector('.info-area').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (cell.classList.contains('cell-busy')) return;
-                    editInfo(cell, index);
-                });
+            cell.querySelector('.info-area').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (cell.classList.contains('cell-busy')) return;
+                editInfo(cell, index);
+            });
+        }
+
+        // ==================== IMAGE PROCESSING ====================
+        function loadImageFromFile(file) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    reject(new Error('Formato no soportado por el navegador (probá JPG o PNG)'));
+                };
+                img.src = url;
+            });
+        }
+
+        async function prepareImage(file) {
+            const img = await loadImageFromFile(file);
+            const canvas = document.createElement('canvas');
+            canvas.width = TARGET_W;
+            canvas.height = TARGET_H;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, TARGET_W, TARGET_H);
+
+            const srcRatio = img.width / img.height;
+            const dstRatio = TARGET_W / TARGET_H;
+            let sx, sy, sw, sh;
+            if (srcRatio > dstRatio) {
+                sh = img.height; sw = sh * dstRatio;
+                sx = (img.width - sw) / 2; sy = 0;
+            } else {
+                sw = img.width; sh = sw / dstRatio;
+                sx = 0; sy = (img.height - sh) / 2;
             }
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, TARGET_W, TARGET_H);
+
+            const qualities = [0.88, 0.82, 0.75, 0.68, 0.6];
+            for (const q of qualities) {
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
+                if (!blob) throw new Error('No se pudo generar la imagen');
+                if (blob.size <= MAX_BYTES) return blob;
+            }
+            return await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.55));
         }
 
-        function escapeHtml(s) {
-            return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-        }
-
+        // ==================== UPLOAD/EDIT/DELETE ====================
         function handleDragOver(e, cell) {
             e.preventDefault(); e.stopPropagation();
             cell.classList.add('border-blue-500', 'bg-blue-50', 'scale-[1.02]', 'shadow-lg', 'z-10');
@@ -536,20 +592,15 @@
             if (dt) dt.innerText = '¡Suelta la foto!';
             if (di) di.className = 'ph ph-upload-simple text-3xl mb-1 text-blue-500 animate-bounce drop-icon';
         }
-
         function handleDragLeave(e, cell) {
             e.preventDefault(); e.stopPropagation();
             paintCell(cell, parseInt(cell.dataset.index));
         }
-
         function handleDrop(e, index, cell) {
             e.preventDefault(); e.stopPropagation();
             const files = e.dataTransfer.files;
-            if (files && files.length > 0) {
-                uploadPhoto(index, files[0], cell);
-            } else {
-                paintCell(cell, index);
-            }
+            if (files && files.length > 0) uploadPhoto(index, files[0], cell);
+            else paintCell(cell, index);
         }
 
         async function uploadPhoto(index, file, cell) {
@@ -559,19 +610,12 @@
 
             cell.classList.add('cell-busy');
             try {
-                // Procesar la imagen: ajustar a 5568x4176 (crop centrado) y comprimir a JPEG
-                let processedBlob;
-                try {
-                    processedBlob = await prepareImage(file);
-                } catch (prepErr) {
-                    throw new Error(prepErr.message || 'No se pudo procesar la imagen');
-                }
-
-                const processedFile = new File([processedBlob], 'photo.jpg', { type: 'image/jpeg' });
+                const blob = await prepareImage(file);
+                const processed = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
                 const form = new FormData();
                 form.append('curso', activeCurso);
                 form.append('position', String(index));
-                form.append('file', processedFile);
+                form.append('file', processed);
                 form.append('fallbackName', fallbackName);
                 const result = await api('/api/photo', { method: 'POST', body: form });
                 album.slots[index] = { ...result.slot, _v: Date.now() };
@@ -652,6 +696,7 @@
             });
         }
 
+        // ==================== EXCEL ====================
         btnExcel.addEventListener('click', () => excelInput.click());
 
         excelInput.addEventListener('change', (e) => {
@@ -683,8 +728,6 @@
                     }
 
                     const album = albums[activeCurso];
-                    const targetSize = Math.max(album.size, students.length);
-
                     const slots = students.map((s, i) => ({ position: i, name: s.name, rut: s.rut }));
                     gridLoading.classList.remove('hidden');
                     const result = await api('/api/bulk-info', {
@@ -700,7 +743,7 @@
                         }));
                     }
                     renderGrid();
-                    toast(`✓ ${students.length} alumnos cargados en ${activeCurso}`);
+                    toast(`✓ ${students.length} alumnos cargados en ${fullCourseName(activeCurso)}`);
                 } catch (err) {
                     console.error(err);
                     toast(`Error Excel: ${err.message}`, 'error');
@@ -753,6 +796,7 @@
             }
         });
 
+        // ==================== DOWNLOAD ====================
         btnDownload.addEventListener('click', async () => {
             btnDownload.disabled = true;
             btnDownload.classList.replace('bg-blue-600', 'bg-blue-400');
@@ -784,7 +828,7 @@
                 ctx.fillStyle = '#1e293b';
                 ctx.font = 'bold 80px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(`Cuadro de Honor - Curso ${activeCurso}`, canvas.width / 2, margin + 80);
+                ctx.fillText(`Cuadro de Honor - ${fullCourseName(activeCurso)}`, canvas.width / 2, margin + 80);
 
                 const loadImage = (url) => new Promise((resolve, reject) => {
                     const img = new Image();
@@ -801,8 +845,7 @@
                     for (const w of words) {
                         const test = current ? current + ' ' + w : w;
                         if (ctx.measureText(test).width > maxWidth && current) {
-                            lines.push(current);
-                            current = w;
+                            lines.push(current); current = w;
                         } else {
                             current = test;
                         }
@@ -863,11 +906,8 @@
                     ctx.textAlign = 'center';
                     const name = slot?.name || `Alumno ${i + 1}`;
                     const lines = wrapText(name, cellW - 30);
-                    const maxLines = 2;
-                    const used = lines.slice(0, maxLines);
-                    if (lines.length > maxLines) {
-                        used[maxLines - 1] = used[maxLines - 1] + '…';
-                    }
+                    const used = lines.slice(0, 2);
+                    if (lines.length > 2) used[1] = used[1] + '…';
                     used.forEach((ln, k) => {
                         ctx.fillText(ln, x + (cellW / 2), y + imgH + 40 + (k * 36));
                     });
@@ -881,7 +921,7 @@
 
                 const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
                 const link = document.createElement('a');
-                link.download = `Cuadro_Honor_Curso_${activeCurso}.jpg`;
+                link.download = `Cuadro_Honor_${fullCourseName(activeCurso).replace(/[^\w]+/g, '_')}.jpg`;
                 link.href = dataUrl;
                 link.click();
             } catch (e) {
@@ -893,21 +933,27 @@
                 btnDownload.classList.add('hover:-translate-y-1', 'hover:shadow-xl');
                 downloadIcon.classList.remove('hidden');
                 loadingIcon.classList.add('hidden');
-                downloadText.innerText = `Descargar Cuadro Completo (${activeCurso})`;
+                downloadText.innerText = `Descargar Cuadro Completo (${fullCourseName(activeCurso)})`;
             }
         });
 
-        async function init() {
-            excelCursoLabel.innerText = activeCurso;
-            sizeCursoLabel.innerText = activeCurso;
-            downloadText.innerText = `Descargar Cuadro Completo (${activeCurso})`;
-            currentUser = await fetchMe();
-            applyAuthUI();
-            renderCourseButtons();
-            await ensureLoaded(activeCurso);
-            renderGrid();
-        }
+        // ==================== EVENT WIRING ====================
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            doLogin(loginUser.value, loginPass.value);
+        });
+        btnLogout.addEventListener('click', doLogout);
 
+        // ==================== INIT ====================
+        async function init() {
+            const me = await fetchMe();
+            if (me) {
+                currentUser = me;
+                await enterApp();
+            } else {
+                showLoginView();
+            }
+        }
         init();
     </script>
 </body>
