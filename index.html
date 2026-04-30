@@ -151,11 +151,16 @@
                 </div>
             </div>
 
-            <div class="flex justify-center pt-2 pb-4">
-                <button id="btn-download" class="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all bg-blue-600 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-1">
-                    <i class="ph ph-download-simple text-2xl" id="download-icon"></i>
-                    <i class="ph ph-spinner animate-spin text-2xl hidden" id="loading-icon"></i>
-                    <span id="download-text">Descargar Cuadro Completo</span>
+            <div class="flex flex-col items-center gap-3 pt-2 pb-4">
+                <button id="btn-download-1" data-batch="1" class="batch-btn flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all bg-blue-600 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-1 disabled:opacity-60 disabled:hover:translate-y-0">
+                    <i class="ph ph-download-simple text-2xl batch-icon"></i>
+                    <i class="ph ph-spinner animate-spin text-2xl hidden batch-loading"></i>
+                    <span class="batch-text">Descargar Lote 1 (fotos 1-25)</span>
+                </button>
+                <button id="btn-download-2" data-batch="2" class="batch-btn flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all bg-emerald-600 hover:bg-emerald-700 hover:shadow-xl hover:-translate-y-1 disabled:opacity-60 disabled:hover:translate-y-0">
+                    <i class="ph ph-download-simple text-2xl batch-icon"></i>
+                    <i class="ph ph-spinner animate-spin text-2xl hidden batch-loading"></i>
+                    <span class="batch-text">Descargar Lote 2 (fotos 26 en adelante)</span>
                 </button>
             </div>
 
@@ -284,10 +289,8 @@
         const modalTotalTotal = document.getElementById('modal-total-total');
         const modalTotalMissing = document.getElementById('modal-total-missing');
         const modalTotalPct = document.getElementById('modal-total-pct');
-        const btnDownload = document.getElementById('btn-download');
-        const downloadText = document.getElementById('download-text');
-        const downloadIcon = document.getElementById('download-icon');
-        const loadingIcon = document.getElementById('loading-icon');
+        const btnDownload1 = document.getElementById('btn-download-1');
+        const btnDownload2 = document.getElementById('btn-download-2');
         const btnAddCell = document.getElementById('btn-add-cell');
         const btnRemoveCell = document.getElementById('btn-remove-cell');
         const toastEl = document.getElementById('toast');
@@ -501,7 +504,27 @@
             const full = fullCourseName(activeCurso);
             excelCursoLabel.textContent = full;
             gridTitle.textContent = full;
-            downloadText.textContent = `Descargar Cuadro Completo (${full})`;
+            updateBatchButtons();
+        }
+
+        function updateBatchButtons() {
+            const album = albums[activeCurso];
+            const total = album?.size || 0;
+            const lote1End = Math.min(25, total);
+            const lote2Start = 26;
+            const lote2End = total;
+            const t1 = btnDownload1.querySelector('.batch-text');
+            const t2 = btnDownload2.querySelector('.batch-text');
+            if (t1) t1.textContent = `Descargar Lote 1 (fotos 1-${lote1End})`;
+            if (t2) {
+                if (total > 25) {
+                    t2.textContent = `Descargar Lote 2 (fotos ${lote2Start}-${lote2End})`;
+                    btnDownload2.disabled = false;
+                } else {
+                    t2.textContent = `Descargar Lote 2 (sin fotos extra)`;
+                    btnDownload2.disabled = true;
+                }
+            }
         }
 
         function updateStats() {
@@ -531,6 +554,8 @@
             }
             // Section total stats
             updateSectionTotal();
+            // Refrescar etiquetas de los botones de lote (dependen de album.size)
+            updateBatchButtons();
         }
 
         function computeSectionTotals() {
@@ -1042,22 +1067,31 @@
             }
         });
 
-        // ==================== DOWNLOAD ====================
-        btnDownload.addEventListener('click', async () => {
-            btnDownload.disabled = true;
-            btnDownload.classList.replace('bg-blue-600', 'bg-blue-400');
-            btnDownload.classList.remove('hover:-translate-y-1', 'hover:shadow-xl');
-            downloadIcon.classList.add('hidden');
-            loadingIcon.classList.remove('hidden');
-            downloadText.innerText = 'Procesando…';
+        // ==================== DOWNLOAD (en lotes) ====================
+        async function generateBatchDownload(btn, startIdx, endIdx, batchLabel) {
+            const album = albums[activeCurso];
+            if (!album) { toast('Curso no cargado', 'error'); return; }
+            if (startIdx >= album.size) { toast('Lote sin fotos para descargar'); return; }
+            const realEnd = Math.min(endIdx, album.size - 1);
+            const cellCount = realEnd - startIdx + 1;
+
+            const icon = btn.querySelector('.batch-icon');
+            const spinner = btn.querySelector('.batch-loading');
+            const textEl = btn.querySelector('.batch-text');
+            const originalText = textEl.textContent;
+
+            btn.disabled = true;
+            icon.classList.add('hidden');
+            spinner.classList.remove('hidden');
+            textEl.textContent = 'Procesando…';
 
             try {
-                const album = albums[activeCurso];
                 const cols = 7;
-                const rows = Math.ceil(album.size / cols);
+                const rows = Math.ceil(cellCount / cols);
                 const cellW = 500;
-                const cellH = 660;        // 3:4 aspect — same proporción que las celdas del sitio
-                const plateH = 220;       // placa de identificación al pie
+                const cellH = 600;                          // celda más cuadrada (5:6)
+                const plateH = Math.round(cellH * 0.30);    // placa = 30% de la foto
+                const plateBottomOffset = 40;               // placa elevada del borde inferior
                 const gap = 25;
                 const margin = 80;
                 const headerH = 150;
@@ -1073,7 +1107,7 @@
                 ctx.fillStyle = '#1e293b';
                 ctx.font = 'bold 80px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(`Cuadro de Honor - ${fullCourseName(activeCurso)}`, canvas.width / 2, margin + 80);
+                ctx.fillText(`Cuadro de Honor - ${fullCourseName(activeCurso)} — ${batchLabel}`, canvas.width / 2, margin + 80);
 
                 const loadImage = (url) => new Promise((resolve, reject) => {
                     const img = new Image();
@@ -1099,18 +1133,18 @@
                     return lines;
                 };
 
-                for (let i = 0; i < album.size; i++) {
-                    const slot = album.slots[i];
-                    const col = i % cols;
+                for (let i = 0; i < cellCount; i++) {
+                    const realIdx = startIdx + i;       // posición original (para badge y foto)
+                    const slot = album.slots[realIdx];
+                    const col = i % cols;               // posición en el canvas del lote
                     const row = Math.floor(i / cols);
                     const x = margin + (col * (cellW + gap));
                     const y = margin + headerH + (row * (cellH + gap));
                     const isFilled = !!(slot && slot.hasPhoto);
 
-                    // Foto rellena toda la celda (relación 3:4) con crop centrado
                     if (isFilled) {
                         try {
-                            const img = await loadImage(photoUrl(activeCurso, i, slot._v));
+                            const img = await loadImage(photoUrl(activeCurso, realIdx, slot._v));
                             const imgRatio = img.width / img.height;
                             const boxRatio = cellW / cellH;
                             let sw, sh, sx, sy;
@@ -1123,12 +1157,11 @@
                             }
                             ctx.drawImage(img, sx, sy, sw, sh, x, y, cellW, cellH);
                         } catch (err) {
-                            console.error('img', i, err);
+                            console.error('img', realIdx, err);
                             ctx.fillStyle = '#fee2e2';
                             ctx.fillRect(x, y, cellW, cellH);
                         }
                     } else {
-                        // Celda vacía: fondo gris claro con borde dasheado
                         ctx.fillStyle = '#f8fafc';
                         ctx.fillRect(x, y, cellW, cellH);
                         ctx.strokeStyle = '#cbd5e1';
@@ -1138,61 +1171,58 @@
                         ctx.setLineDash([]);
                     }
 
-                    // Borde general de la celda
                     ctx.strokeStyle = '#e2e8f0';
                     ctx.lineWidth = 4;
                     ctx.strokeRect(x, y, cellW, cellH);
 
-                    // Badge de posición arriba a la izquierda
+                    // Badge con la posición REAL (no la posición dentro del lote)
                     ctx.fillStyle = '#2563eb';
                     ctx.fillRect(x + 12, y + 12, 80, 50);
                     ctx.fillStyle = '#ffffff';
                     ctx.font = 'bold 32px sans-serif';
                     ctx.textAlign = 'center';
-                    ctx.fillText(String(i + 1), x + 52, y + 48);
+                    ctx.fillText(String(realIdx + 1), x + 52, y + 48);
 
-                    // ----- Placa de identificación al pie (igual que en el sitio) -----
-                    const plateY = y + cellH - plateH;
+                    const plateY = y + cellH - plateH - plateBottomOffset;
                     if (isFilled) {
-                        // Negro semi-translúcido para celdas con foto
                         ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
                         ctx.fillRect(x, plateY, cellW, plateH);
-                        // Línea fina blanca en el borde superior
                         ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
                         ctx.fillRect(x, plateY, cellW, 1);
                     } else {
-                        // Blanco opaco para celdas vacías
                         ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
                         ctx.fillRect(x, plateY, cellW, plateH);
                         ctx.fillStyle = '#e2e8f0';
                         ctx.fillRect(x, plateY, cellW, 1);
                     }
 
-                    // Texto dentro de la placa — layout anclado desde arriba con padding fijo
                     const nameColor = isFilled ? '#ffffff' : '#1e293b';
                     const rutColor  = isFilled ? 'rgba(255,255,255,0.85)' : '#64748b';
-                    const name = slot?.name || `Alumno ${i + 1}`;
+                    const name = slot?.name || `Alumno ${realIdx + 1}`;
 
                     const nameFontSize = 26;
                     const rutFontSize  = 21;
                     const lineH = 32;
+                    const gapBetween = 8;
+                    const padBottomMin = 18;
                     const hasRut = !!slot?.rut;
 
-                    // Medir wrap con la fuente correcta
                     ctx.font = `bold ${nameFontSize}px sans-serif`;
                     const lines = wrapText(name, cellW - 24);
                     const used = lines.slice(0, 2);
                     if (lines.length > 2) used[1] = used[1] + '…';
 
-                    // Calcular altura total: nombre(s) + RUT
-                    const nameBlockH = used.length * lineH;
-                    const rutBlockH  = hasRut ? rutFontSize + 6 : 0;
+                    const nameBlockH = nameFontSize + (used.length - 1) * lineH;
+                    const rutBlockH  = hasRut ? gapBetween + rutFontSize : 0;
                     const totalH = nameBlockH + rutBlockH;
 
-                    // Centrar el bloque dentro de la placa
-                    const padTop = Math.round((plateH - totalH) / 2);
-                    // firstY = baseline de la primera línea de nombre
-                    const firstY = plateY + padTop + nameFontSize;
+                    let padTop = Math.round((plateH - totalH) / 2);
+                    const padBottomFromCenter = plateH - padTop - totalH;
+                    if (padBottomFromCenter < padBottomMin) {
+                        padTop = Math.max(8, plateH - totalH - padBottomMin);
+                    }
+                    const firstNameBaseline = plateY + padTop + nameFontSize;
+                    const lastNameBaseline  = firstNameBaseline + (used.length - 1) * lineH;
 
                     ctx.fillStyle = nameColor;
                     ctx.textAlign = 'center';
@@ -1202,7 +1232,7 @@
                         ctx.shadowBlur = 2;
                     }
                     used.forEach((ln, k) => {
-                        ctx.fillText(ln, x + cellW / 2, firstY + k * lineH);
+                        ctx.fillText(ln, x + cellW / 2, firstNameBaseline + k * lineH);
                     });
                     ctx.shadowColor = 'transparent';
                     ctx.shadowOffsetY = 0;
@@ -1211,9 +1241,8 @@
                     if (hasRut) {
                         ctx.fillStyle = rutColor;
                         ctx.font = `${rutFontSize}px sans-serif`;
-                        // baseline del RUT = debajo del último nombre + 6px + ascent del RUT
-                        const rutY = firstY + nameBlockH - lineH + lineH + rutFontSize + 2;
-                        ctx.fillText(slot.rut, x + cellW / 2, rutY);
+                        const rutBaseline = lastNameBaseline + gapBetween + rutFontSize;
+                        ctx.fillText(slot.rut, x + cellW / 2, rutBaseline);
                     }
                 }
 
@@ -1222,7 +1251,9 @@
                         if (!blob) { reject(new Error('No se pudo generar la imagen')); return; }
                         const url = URL.createObjectURL(blob);
                         const link = document.createElement('a');
-                        link.download = `Cuadro_Honor_${fullCourseName(activeCurso).replace(/[^\w]+/g, '_')}.jpg`;
+                        const safeName = fullCourseName(activeCurso).replace(/[^\w]+/g, '_');
+                        const safeBatch = batchLabel.replace(/[^\w]+/g, '_');
+                        link.download = `Cuadro_Honor_${safeName}_${safeBatch}.jpg`;
                         link.href = url;
                         document.body.appendChild(link);
                         link.click();
@@ -1235,13 +1266,22 @@
                 console.error(e);
                 toast(`Error al generar imagen: ${e.message}`, 'error');
             } finally {
-                btnDownload.disabled = false;
-                btnDownload.classList.replace('bg-blue-400', 'bg-blue-600');
-                btnDownload.classList.add('hover:-translate-y-1', 'hover:shadow-xl');
-                downloadIcon.classList.remove('hidden');
-                loadingIcon.classList.add('hidden');
-                downloadText.innerText = `Descargar Cuadro Completo (${fullCourseName(activeCurso)})`;
+                btn.disabled = false;
+                icon.classList.remove('hidden');
+                spinner.classList.add('hidden');
+                textEl.textContent = originalText;
             }
+        }
+
+        btnDownload1.addEventListener('click', () => {
+            // Lote 1: posiciones 1-25 (índices 0-24)
+            generateBatchDownload(btnDownload1, 0, 24, 'Lote 1 (1-25)');
+        });
+        btnDownload2.addEventListener('click', () => {
+            // Lote 2: posiciones 26 hasta el final (índices 25 en adelante)
+            const album = albums[activeCurso];
+            if (!album || album.size <= 25) { toast('Este curso no tiene fotos extra para el Lote 2'); return; }
+            generateBatchDownload(btnDownload2, 25, album.size - 1, `Lote 2 (26-${album.size})`);
         });
 
         // ==================== EVENT WIRING ====================

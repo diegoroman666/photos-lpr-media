@@ -38,10 +38,48 @@ const stores = () => ({
 const emptySlot = () => ({ name: '', rut: '', hasPhoto: false, contentType: null, photoUpdatedAt: 0 });
 
 async function loadMeta(curso) {
-  const { meta } = stores();
-  const data = await meta.get(`meta:${curso}`, { type: 'json' });
-  if (!data || !Array.isArray(data.slots)) {
-    return { size: DEFAULT_SIZE, slots: Array.from({ length: DEFAULT_SIZE }, emptySlot) };
+  const { meta, photos } = stores();
+  const raw = await meta.get(`meta:${curso}`, { type: 'json' });
+  const data = (raw && Array.isArray(raw.slots))
+    ? raw
+    : { size: DEFAULT_SIZE, slots: Array.from({ length: DEFAULT_SIZE }, emptySlot) };
+
+  // Reconciliación: la fuente de verdad de "tiene foto" es el blob store, no el meta.
+  // Esto repara cualquier desincronización por race condition en uploads concurrentes
+  // (el último saveMeta puede pisar el hasPhoto de un slot anterior, pero el blob queda).
+  let modified = false;
+  try {
+    const list = await photos.list({ prefix: `photo:${curso}:` });
+    const existing = new Set();
+    for (const b of (list.blobs || [])) {
+      const m = b.key.match(new RegExp(`^photo:${curso.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}:(\\d+)$`));
+      if (m) existing.add(parseInt(m[1], 10));
+    }
+    // Marcar como hasPhoto=true cualquier slot con blob existente
+    for (const pos of existing) {
+      while (data.slots.length <= pos) { data.slots.push(emptySlot()); modified = true; }
+      if (!data.slots[pos].hasPhoto) {
+        data.slots[pos].hasPhoto = true;
+        if (!data.slots[pos].photoUpdatedAt) data.slots[pos].photoUpdatedAt = Date.now();
+        modified = true;
+      }
+    }
+    // Si meta dice hasPhoto=true pero el blob no existe, corregir
+    for (let i = 0; i < data.slots.length; i++) {
+      if (data.slots[i].hasPhoto && !existing.has(i)) {
+        data.slots[i].hasPhoto = false;
+        data.slots[i].contentType = null;
+        modified = true;
+      }
+    }
+    data.size = data.slots.length;
+  } catch (e) {
+    // Si list() falla, devolvemos el meta tal cual; mejor que romper el GET completo.
+    console.error('reconcile photos failed:', e?.message);
+  }
+
+  if (modified) {
+    try { await meta.setJSON(`meta:${curso}`, data); } catch (e) { console.error('persist reconciled meta:', e?.message); }
   }
   return data;
 }
