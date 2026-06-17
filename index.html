@@ -88,7 +88,19 @@
                     </button>
                 </div>
                 <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
-                <p class="text-slate-500 mb-6">Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.</p>
+                <p class="text-slate-500 mb-3">Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.</p>
+
+                <!-- Establecimiento -->
+                <div id="school-bar" class="flex items-center justify-center gap-3 mb-5 min-h-[44px]">
+                    <img id="school-logo-img" src="" alt="Logo" class="h-11 w-11 object-contain rounded-lg hidden" />
+                    <span id="school-name-text" class="text-base font-bold text-slate-700 hidden"></span>
+                    <button id="btn-edit-school"
+                        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all"
+                        title="Editar nombre y logo del establecimiento">
+                        <i class="ph ph-buildings text-sm"></i>
+                        <span id="school-btn-label">Agregar nombre/logo del establecimiento</span>
+                    </button>
+                </div>
 
                 <div id="section-tabs" class="flex flex-wrap justify-center gap-2 mb-3"></div>
                 <div class="flex justify-center mb-3">
@@ -166,6 +178,49 @@
                 </button>
             </div>
 
+        </div>
+    </div>
+
+    <!-- SCHOOL EDIT MODAL -->
+    <div id="school-modal" class="modal-backdrop">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 p-6 w-full max-w-sm mx-4">
+            <div class="flex items-center justify-between mb-5">
+                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="ph ph-buildings text-blue-600"></i> Establecimiento
+                </h2>
+                <button id="school-modal-close" class="p-1 rounded text-slate-400 hover:bg-slate-100">
+                    <i class="ph ph-x text-xl"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <label class="block text-xs font-semibold text-slate-600">
+                    Nombre del establecimiento
+                    <input type="text" id="school-name-input" placeholder="Ej: Liceo Bicentenario Los Andes"
+                        class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                </label>
+                <div>
+                    <div class="text-xs font-semibold text-slate-600 mb-1">Logo del establecimiento</div>
+                    <div id="logo-preview-wrap" class="flex items-center gap-3 mb-2 hidden">
+                        <img id="logo-preview-img" src="" alt="Logo" class="h-14 w-14 object-contain rounded-lg border border-slate-200" />
+                        <button id="btn-remove-logo" class="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1">
+                            <i class="ph ph-trash"></i> Quitar logo
+                        </button>
+                    </div>
+                    <input type="file" id="logo-file-input" accept="image/*" class="hidden" />
+                    <button id="btn-pick-logo" class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-all">
+                        <i class="ph ph-image text-sm"></i>
+                        <span id="btn-pick-logo-label">Subir logo</span>
+                    </button>
+                </div>
+            </div>
+            <div class="flex gap-2 mt-6">
+                <button id="school-modal-save" class="flex-1 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition-all">
+                    Guardar
+                </button>
+                <button id="school-modal-cancel" class="px-4 py-2.5 rounded-lg text-slate-600 bg-slate-100 hover:bg-slate-200 font-semibold text-sm transition-all">
+                    Cancelar
+                </button>
+            </div>
         </div>
     </div>
 
@@ -252,6 +307,8 @@
         let activeSection = null;
         let activeCurso = null;
         const albums = {}; // { courseId: { size, slots } } — loaded on demand
+        let schoolSettings = { name: '', logoDataUrl: null, logoUpdatedAt: 0 };
+        let pendingDeleteState = null; // { timer, overlay, cell, curso, index }
 
         // ==================== DOM ====================
         const loginView = document.getElementById('login-view');
@@ -296,14 +353,29 @@
         const btnAddCell = document.getElementById('btn-add-cell');
         const btnRemoveCell = document.getElementById('btn-remove-cell');
         const toastEl = document.getElementById('toast');
+        const schoolLogoImg = document.getElementById('school-logo-img');
+        const schoolNameText = document.getElementById('school-name-text');
+        const btnEditSchool = document.getElementById('btn-edit-school');
+        const schoolBtnLabel = document.getElementById('school-btn-label');
+        const schoolModal = document.getElementById('school-modal');
+        const schoolModalClose = document.getElementById('school-modal-close');
+        const schoolModalSave = document.getElementById('school-modal-save');
+        const schoolModalCancel = document.getElementById('school-modal-cancel');
+        const schoolNameInput = document.getElementById('school-name-input');
+        const logoFileInput = document.getElementById('logo-file-input');
+        const btnPickLogo = document.getElementById('btn-pick-logo');
+        const btnPickLogoLabel = document.getElementById('btn-pick-logo-label');
+        const btnRemoveLogo = document.getElementById('btn-remove-logo');
+        const logoPreviewWrap = document.getElementById('logo-preview-wrap');
+        const logoPreviewImg = document.getElementById('logo-preview-img');
 
         // ==================== HELPERS ====================
         let toastTimer = null;
-        function toast(msg, kind = '') {
+        function toast(msg, kind = '', durationMs = 2500) {
             toastEl.textContent = msg;
             toastEl.className = `toast show ${kind}`;
             clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => { toastEl.className = `toast ${kind}`; }, 2500);
+            toastTimer = setTimeout(() => { toastEl.className = `toast ${kind}`; }, durationMs);
         }
 
         function escapeHtml(s) {
@@ -395,10 +467,11 @@
         }
 
         async function doLogout() {
+            cancelPendingDelete();
             try { await fetch('/api/logout', { method: 'POST' }); } catch {}
             currentUser = null;
-            // Wipe in-memory data so next login starts clean
             for (const k of Object.keys(albums)) delete albums[k];
+            schoolSettings = { name: '', logoDataUrl: null, logoUpdatedAt: 0 };
             showLoginView();
             toast('Sesión cerrada');
         }
@@ -429,6 +502,7 @@
 
             renderSectionTabs();
             await switchSection(activeSection);
+            loadSchoolSettings(); // sin await — no bloquea el renderizado del curso
         }
 
         // ==================== RENDER ====================
@@ -456,6 +530,7 @@
         }
 
         async function switchSection(secId) {
+            cancelPendingDelete();
             activeSection = secId;
             localStorage.setItem('activeSection', secId);
             const sec = SECTIONS[secId];
@@ -491,6 +566,7 @@
                 }`;
                 btn.onclick = async () => {
                     if (c.id === activeCurso) return;
+                    cancelPendingDelete();
                     activeCurso = c.id;
                     localStorage.setItem(`activeCurso_${activeSection}`, c.id);
                     updateLabels();
@@ -1081,6 +1157,10 @@
             });
             toolbar.querySelector('.et-ok').addEventListener('click', async (e) => {
                 e.stopPropagation();
+                // Capturar valores antes de cleanup (que elimina la toolbar del DOM)
+                const savedX = Math.round(currentX * 10) / 10;
+                const savedY = Math.round(currentY * 10) / 10;
+                const savedScale = Math.round(currentScale * 100) / 100;
                 cleanup();
                 cell.classList.add('cell-busy');
                 try {
@@ -1089,14 +1169,15 @@
                         headers: { 'content-type': 'application/json' },
                         body: JSON.stringify({
                             curso: activeCurso, position: index,
-                            photoPositionX: Math.round(currentX * 10) / 10,
-                            photoPositionY: Math.round(currentY * 10) / 10,
-                            photoScale: Math.round(currentScale * 100) / 100
+                            photoPositionX: savedX,
+                            photoPositionY: savedY,
+                            photoScale: savedScale
                         })
                     });
                     album.slots[index] = { ...album.slots[index], ...result.slot };
+                    toast('✓ Posición guardada');
                 } catch (err) {
-                    toast(`Error guardando: ${err.message}`, 'error');
+                    toast(`Error guardando posición: ${err.message}`, 'error');
                 } finally {
                     cell.classList.remove('cell-busy');
                     paintCell(cell, index);
@@ -1109,21 +1190,32 @@
             });
         }
 
-        // ==================== DELETE CELL ====================
-        async function deleteCell(index, cell) {
-            const album = albums[activeCurso];
-            const data = album.slots[index];
-            const label = data.name ? `"${data.name}"` : `cuadro ${index + 1}`;
-            if (!confirm(`¿Eliminar ${label}? Se borrarán la foto y los datos. Esta acción no se puede deshacer.`)) return;
+        // ==================== DELETE CELL (soft-delete con countdown + restaurar) ====================
+        function cancelPendingDelete() {
+            if (!pendingDeleteState) return;
+            clearInterval(pendingDeleteState.timer);
+            if (pendingDeleteState.overlay && pendingDeleteState.overlay.parentNode) {
+                pendingDeleteState.overlay.remove();
+            }
+            pendingDeleteState = null;
+        }
 
-            cell.classList.add('cell-busy');
+        async function executePendingDelete() {
+            if (!pendingDeleteState) return;
+            const { overlay, curso, index, album, prevSlots } = pendingDeleteState;
+            clearInterval(pendingDeleteState.timer);
+            if (overlay && overlay.parentNode) overlay.remove();
+            pendingDeleteState = null;
+
+            // Buscar la celda actual (puede haber cambiado si se re-renderizó)
+            const cellEl = gridContainer.querySelector(`[data-index="${index}"]`);
+            if (cellEl) cellEl.classList.add('cell-busy');
             try {
                 const result = await api('/api/delete-slot', {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ curso: activeCurso, position: index })
+                    body: JSON.stringify({ curso, position: index })
                 });
-                const prevSlots = album.slots.slice();
                 album.size = result.size;
                 album.slots = result.slots.map((s, i) => ({
                     ...s,
@@ -1133,10 +1225,188 @@
                 renderGrid();
                 toast('Cuadro eliminado');
             } catch (err) {
-                cell.classList.remove('cell-busy');
-                toast(`Error: ${err.message}`, 'error');
+                if (cellEl) cellEl.classList.remove('cell-busy');
+                toast(`Error eliminando: ${err.message}`, 'error');
             }
         }
+
+        function deleteCell(index, cell) {
+            // Cancelar cualquier eliminación pendiente anterior
+            cancelPendingDelete();
+
+            const album = albums[activeCurso];
+            const prevSlots = album.slots.slice();
+            let secondsLeft = 6;
+
+            const overlay = document.createElement('div');
+            overlay.className = 'absolute inset-0 z-20 rounded-lg overflow-hidden';
+
+            const renderOverlay = () => {
+                overlay.innerHTML = `
+                    <div class="absolute inset-0 bg-red-900/80"></div>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 p-2">
+                        <div class="text-white text-[9px] font-semibold text-center leading-tight">
+                            Eliminando en ${secondsLeft}s…
+                        </div>
+                        <button class="restore-btn flex items-center gap-1 px-2 py-1.5 text-[10px] font-bold bg-white text-red-700 rounded-lg hover:bg-red-50 shadow">
+                            <i class="ph ph-arrow-counter-clockwise text-xs"></i> Restaurar
+                        </button>
+                    </div>
+                `;
+                overlay.querySelector('.restore-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    cancelPendingDelete();
+                });
+            };
+
+            renderOverlay();
+            cell.appendChild(overlay);
+
+            const timer = setInterval(() => {
+                secondsLeft--;
+                if (secondsLeft <= 0) {
+                    executePendingDelete();
+                } else {
+                    renderOverlay();
+                }
+            }, 1000);
+
+            pendingDeleteState = { timer, overlay, curso: activeCurso, index, album, prevSlots };
+        }
+
+        // ==================== SCHOOL SETTINGS ====================
+        async function loadSchoolSettings() {
+            try {
+                const data = await api('/api/settings');
+                schoolSettings.name = data.schoolName || '';
+                schoolSettings.logoUpdatedAt = data.logoUpdatedAt || 0;
+            } catch { return; }
+
+            if (schoolSettings.logoUpdatedAt) {
+                try {
+                    const res = await fetch('/api/logo');
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        if (schoolSettings.logoDataUrl) URL.revokeObjectURL(schoolSettings.logoDataUrl);
+                        schoolSettings.logoDataUrl = URL.createObjectURL(blob);
+                    }
+                } catch {}
+            }
+            renderSchoolBar();
+        }
+
+        function renderSchoolBar() {
+            const hasName = !!schoolSettings.name;
+            const hasLogo = !!schoolSettings.logoDataUrl;
+
+            if (hasLogo) {
+                schoolLogoImg.src = schoolSettings.logoDataUrl;
+                schoolLogoImg.classList.remove('hidden');
+            } else {
+                schoolLogoImg.classList.add('hidden');
+                schoolLogoImg.src = '';
+            }
+
+            if (hasName) {
+                schoolNameText.textContent = schoolSettings.name;
+                schoolNameText.classList.remove('hidden');
+            } else {
+                schoolNameText.classList.add('hidden');
+            }
+
+            schoolBtnLabel.textContent = (hasName || hasLogo) ? 'Editar establecimiento' : 'Agregar nombre/logo del establecimiento';
+        }
+
+        // Modal de edición del establecimiento
+        let logoFileToUpload = null; // archivo seleccionado localmente, pendiente de subir
+        let logoToDelete = false;   // el usuario quiso eliminar el logo existente
+
+        function openSchoolModal() {
+            schoolNameInput.value = schoolSettings.name;
+            logoFileToUpload = null;
+            logoToDelete = false;
+
+            if (schoolSettings.logoDataUrl) {
+                logoPreviewImg.src = schoolSettings.logoDataUrl;
+                logoPreviewWrap.classList.remove('hidden');
+                btnPickLogoLabel.textContent = 'Cambiar logo';
+            } else {
+                logoPreviewWrap.classList.add('hidden');
+                btnPickLogoLabel.textContent = 'Subir logo';
+            }
+            schoolModal.classList.add('show');
+            setTimeout(() => schoolNameInput.focus(), 50);
+        }
+
+        function closeSchoolModal() {
+            schoolModal.classList.remove('show');
+            logoFileInput.value = '';
+        }
+
+        btnEditSchool.addEventListener('click', openSchoolModal);
+        schoolModalClose.addEventListener('click', closeSchoolModal);
+        schoolModalCancel.addEventListener('click', closeSchoolModal);
+        schoolModal.addEventListener('click', (e) => { if (e.target === schoolModal) closeSchoolModal(); });
+
+        btnPickLogo.addEventListener('click', () => logoFileInput.click());
+
+        logoFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            logoFileToUpload = file;
+            logoToDelete = false;
+            const url = URL.createObjectURL(file);
+            logoPreviewImg.src = url;
+            logoPreviewWrap.classList.remove('hidden');
+            btnPickLogoLabel.textContent = 'Cambiar logo';
+        });
+
+        btnRemoveLogo.addEventListener('click', () => {
+            logoToDelete = true;
+            logoFileToUpload = null;
+            logoPreviewWrap.classList.add('hidden');
+            btnPickLogoLabel.textContent = 'Subir logo';
+            logoFileInput.value = '';
+        });
+
+        schoolModalSave.addEventListener('click', async () => {
+            schoolModalSave.disabled = true;
+            schoolModalSave.textContent = 'Guardando…';
+            try {
+                // 1. Guardar nombre
+                const nameResult = await api('/api/settings', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ schoolName: schoolNameInput.value.trim() })
+                });
+                schoolSettings.name = nameResult.schoolName;
+
+                // 2. Logo
+                if (logoToDelete) {
+                    await api('/api/logo', { method: 'DELETE' });
+                    if (schoolSettings.logoDataUrl) URL.revokeObjectURL(schoolSettings.logoDataUrl);
+                    schoolSettings.logoDataUrl = null;
+                    schoolSettings.logoUpdatedAt = 0;
+                } else if (logoFileToUpload) {
+                    const form = new FormData();
+                    form.append('file', logoFileToUpload);
+                    const logoResult = await api('/api/logo', { method: 'POST', body: form });
+                    schoolSettings.logoUpdatedAt = logoResult.logoUpdatedAt;
+                    // Actualizar dataUrl con el archivo local
+                    if (schoolSettings.logoDataUrl) URL.revokeObjectURL(schoolSettings.logoDataUrl);
+                    schoolSettings.logoDataUrl = URL.createObjectURL(logoFileToUpload);
+                }
+
+                renderSchoolBar();
+                closeSchoolModal();
+                toast('✓ Establecimiento guardado');
+            } catch (err) {
+                toast(`Error: ${err.message}`, 'error');
+            } finally {
+                schoolModalSave.disabled = false;
+                schoolModalSave.textContent = 'Guardar';
+            }
+        });
 
         // ==================== EXCEL ====================
         btnExcel.addEventListener('click', () => excelInput.click());
@@ -1275,10 +1545,45 @@
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+                // ---- Header con logo + nombre establecimiento ----
+                const loadImageRaw = (url) => new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = () => resolve(null);
+                    img.src = url;
+                });
+
+                let logoImgEl = null;
+                if (schoolSettings.logoDataUrl) {
+                    logoImgEl = await loadImageRaw(schoolSettings.logoDataUrl);
+                }
+
+                const hdrCenterY = margin + headerH / 2;
+                const logoSize = headerH - 24;
+                let textStartX = canvas.width / 2;
+
+                if (logoImgEl) {
+                    const lw = logoSize * (logoImgEl.width / logoImgEl.height);
+                    const lx = margin;
+                    const ly = margin + (headerH - logoSize) / 2;
+                    ctx.drawImage(logoImgEl, lx, ly, lw, logoSize);
+                    textStartX = (canvas.width + lw + margin) / 2;
+                }
+
                 ctx.fillStyle = '#1e293b';
-                ctx.font = 'bold 80px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(`Cuadro de Honor - ${fullCourseName(activeCurso)} — ${batchLabel}`, canvas.width / 2, margin + 80);
+
+                if (schoolSettings.name) {
+                    ctx.font = 'bold 64px sans-serif';
+                    ctx.fillText(schoolSettings.name, textStartX, hdrCenterY - 18);
+                    ctx.font = 'bold 44px sans-serif';
+                    ctx.fillStyle = '#475569';
+                    ctx.fillText(`Cuadro de Honor — ${fullCourseName(activeCurso)} — ${batchLabel}`, textStartX, hdrCenterY + 42);
+                } else {
+                    ctx.font = 'bold 80px sans-serif';
+                    ctx.fillText(`Cuadro de Honor - ${fullCourseName(activeCurso)} — ${batchLabel}`, textStartX, hdrCenterY + 28);
+                }
+                // ---- Fin header ----
 
                 const loadImage = (url) => new Promise((resolve, reject) => {
                     const img = new Image();

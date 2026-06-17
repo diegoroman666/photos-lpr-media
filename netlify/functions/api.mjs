@@ -10,6 +10,8 @@ export const config = {
     '/api/expand',
     '/api/shrink',
     '/api/delete-slot',
+    '/api/settings',
+    '/api/logo',
     '/api/login',
     '/api/logout',
     '/api/me'
@@ -408,6 +410,54 @@ export default async (request) => {
       meta.size = meta.slots.length;
       await saveMeta(curso, meta);
       return json({ ok: true, size: meta.size });
+    }
+
+    if (path === 'settings' && method === 'GET') {
+      const { meta } = stores();
+      const raw = await meta.get('meta:settings', { type: 'json' }).catch(() => null);
+      return json({ schoolName: raw?.schoolName || '', logoUpdatedAt: raw?.logoUpdatedAt || 0 });
+    }
+
+    if (path === 'settings' && method === 'POST') {
+      parsedBody = await request.json();
+      const { meta } = stores();
+      const current = await meta.get('meta:settings', { type: 'json' }).catch(() => ({}));
+      const updated = { ...(current || {}), schoolName: String(parsedBody.schoolName || '').trim() };
+      await meta.setJSON('meta:settings', updated);
+      return json({ ok: true, schoolName: updated.schoolName });
+    }
+
+    if (path === 'logo' && method === 'GET') {
+      const { photos } = stores();
+      const result = await photos.getWithMetadata('logo:school', { type: 'arrayBuffer' }).catch(() => null);
+      if (!result) return new Response('not found', { status: 404 });
+      return new Response(result.data, {
+        status: 200,
+        headers: { 'content-type': result.metadata?.contentType || 'image/png', 'cache-control': 'public, max-age=3600' }
+      });
+    }
+
+    if (path === 'logo' && method === 'POST') {
+      parsedForm = await request.formData();
+      const file = parsedForm.get('file');
+      if (!file) return err('file required');
+      const buffer = await file.arrayBuffer();
+      if (buffer.byteLength > 500 * 1024) return err('Logo demasiado grande (máx 500 KB)');
+      const contentType = file.type || 'image/png';
+      const { photos, meta } = stores();
+      await photos.set('logo:school', buffer, { metadata: { contentType } });
+      const current = await meta.get('meta:settings', { type: 'json' }).catch(() => ({}));
+      const logoUpdatedAt = Date.now();
+      await meta.setJSON('meta:settings', { ...(current || {}), logoUpdatedAt });
+      return json({ ok: true, logoUpdatedAt });
+    }
+
+    if (path === 'logo' && method === 'DELETE') {
+      const { photos, meta } = stores();
+      await photos.delete('logo:school').catch(() => {});
+      const current = await meta.get('meta:settings', { type: 'json' }).catch(() => ({}));
+      await meta.setJSON('meta:settings', { ...(current || {}), logoUpdatedAt: 0 });
+      return json({ ok: true });
     }
 
     return err('not found', 404);
