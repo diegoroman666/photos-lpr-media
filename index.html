@@ -308,7 +308,8 @@
         let activeCurso = null;
         const albums = {}; // { courseId: { size, slots } } — loaded on demand
         let schoolSettings = { name: '', logoDataUrl: null, logoUpdatedAt: 0 };
-        let pendingDeleteState = null; // { timer, overlay, cell, curso, index }
+        let pendingDeleteState = null;      // soft-delete de cuadro completo
+        let pendingPhotoDeleteState = null; // soft-delete solo de foto
 
         // ==================== DOM ====================
         const loginView = document.getElementById('login-view');
@@ -468,6 +469,7 @@
 
         async function doLogout() {
             cancelPendingDelete();
+            cancelPendingPhotoDelete();
             try { await fetch('/api/logout', { method: 'POST' }); } catch {}
             currentUser = null;
             for (const k of Object.keys(albums)) delete albums[k];
@@ -531,6 +533,7 @@
 
         async function switchSection(secId) {
             cancelPendingDelete();
+            cancelPendingPhotoDelete();
             activeSection = secId;
             localStorage.setItem('activeSection', secId);
             const sec = SECTIONS[secId];
@@ -567,6 +570,7 @@
                 btn.onclick = async () => {
                     if (c.id === activeCurso) return;
                     cancelPendingDelete();
+                    cancelPendingPhotoDelete();
                     activeCurso = c.id;
                     localStorage.setItem(`activeCurso_${activeSection}`, c.id);
                     updateLabels();
@@ -994,19 +998,76 @@
             }
         }
 
-        async function removePhoto(index, cell) {
-            cell.classList.add('cell-busy');
+        function cancelPendingPhotoDelete() {
+            if (!pendingPhotoDeleteState) return;
+            clearInterval(pendingPhotoDeleteState.timer);
+            if (pendingPhotoDeleteState.overlay?.parentNode) pendingPhotoDeleteState.overlay.remove();
+            pendingPhotoDeleteState = null;
+        }
+
+        async function executePendingPhotoDelete() {
+            if (!pendingPhotoDeleteState) return;
+            const { overlay, index, curso } = pendingPhotoDeleteState;
+            clearInterval(pendingPhotoDeleteState.timer);
+            if (overlay?.parentNode) overlay.remove();
+            pendingPhotoDeleteState = null;
+
+            const cellEl = gridContainer.querySelector(`[data-index="${index}"]`);
+            if (cellEl) cellEl.classList.add('cell-busy');
             try {
-                await api(`/api/photo?curso=${encodeURIComponent(activeCurso)}&position=${index}`, { method: 'DELETE' });
-                albums[activeCurso].slots[index].hasPhoto = false;
-                albums[activeCurso].slots[index].contentType = null;
+                await api(`/api/photo?curso=${encodeURIComponent(curso)}&position=${index}`, { method: 'DELETE' });
+                albums[curso].slots[index].hasPhoto = false;
+                albums[curso].slots[index].contentType = null;
+                toast('Foto eliminada');
             } catch (e) {
                 toast(`Error: ${e.message}`, 'error');
             } finally {
-                cell.classList.remove('cell-busy');
-                paintCell(cell, index);
+                if (cellEl) {
+                    cellEl.classList.remove('cell-busy');
+                    paintCell(cellEl, index);
+                }
                 updateStats();
             }
+        }
+
+        function removePhoto(index, cell) {
+            cancelPendingPhotoDelete();
+
+            let secondsLeft = 6;
+            const overlay = document.createElement('div');
+            overlay.className = 'absolute inset-0 z-20 rounded-lg overflow-hidden';
+
+            const renderOverlay = () => {
+                overlay.innerHTML = `
+                    <div class="absolute inset-0 bg-slate-900/85"></div>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 p-2">
+                        <div class="text-white text-[9px] font-semibold text-center leading-tight">
+                            Eliminando foto en ${secondsLeft}s…
+                        </div>
+                        <button class="restore-photo-btn flex items-center gap-1 px-2 py-1.5 text-[10px] font-bold bg-emerald-400 text-white rounded-lg hover:bg-emerald-500 shadow">
+                            <i class="ph ph-arrow-counter-clockwise text-xs"></i> Restaurar foto
+                        </button>
+                    </div>
+                `;
+                overlay.querySelector('.restore-photo-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    cancelPendingPhotoDelete();
+                });
+            };
+
+            renderOverlay();
+            cell.appendChild(overlay);
+
+            const timer = setInterval(() => {
+                secondsLeft--;
+                if (secondsLeft <= 0) {
+                    executePendingPhotoDelete();
+                } else {
+                    renderOverlay();
+                }
+            }, 1000);
+
+            pendingPhotoDeleteState = { timer, overlay, index, curso: activeCurso };
         }
 
         function editInfo(cell, index) {
@@ -1231,8 +1292,8 @@
         }
 
         function deleteCell(index, cell) {
-            // Cancelar cualquier eliminación pendiente anterior
             cancelPendingDelete();
+            cancelPendingPhotoDelete(); // si hay foto pendiente de borrar en esta misma celda, cancelar
 
             const album = albums[activeCurso];
             const prevSlots = album.slots.slice();
