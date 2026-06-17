@@ -45,6 +45,8 @@
             z-index: 50; opacity: 0; pointer-events: none; transition: opacity .2s;
         }
         .modal-backdrop.show { opacity: 1; pointer-events: auto; }
+        .photo-editing { outline: 2px solid #3b82f6; outline-offset: -2px; }
+        .photo-editing img { cursor: move !important; user-select: none; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen flex flex-col">
@@ -700,8 +702,8 @@
             cell.addEventListener('drop', (e) => handleDrop(e, index, cell));
 
             cell.addEventListener('click', (e) => {
-                if (e.target.closest('.delete-btn') || e.target.closest('.info-area')) return;
-                if (cell.classList.contains('cell-busy')) return;
+                if (e.target.closest('.action-btns') || e.target.closest('.info-area')) return;
+                if (cell.classList.contains('cell-busy') || cell.classList.contains('photo-editing')) return;
                 const data = albums[activeCurso].slots[index];
                 if (!data.hasPhoto) {
                     const input = document.createElement('input');
@@ -725,6 +727,9 @@
             const hasImage = !!data.hasPhoto;
             const displayName = data.name || `Alumno ${index + 1}`;
             const displayRut = data.rut || '';
+            const posX = data.photoPositionX ?? 50;
+            const posY = data.photoPositionY ?? 50;
+            const photoScale = data.photoScale ?? 1;
 
             cell.className = `cell-wrapper relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all group ${
                 hasImage
@@ -738,12 +743,27 @@
                 </div>
             `;
 
-            const deleteBtn = hasImage
-                ? `<button class="delete-btn absolute top-1.5 right-1.5 z-10 p-1 bg-red-500/85 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600" title="Quitar foto"><i class="ph ph-trash text-sm"></i></button>`
-                : '';
+            // Botones de acción (top-right, apilados verticalmente al hover)
+            const actionBtns = `
+                <div class="action-btns absolute top-1.5 right-1.5 z-10 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    ${hasImage ? `
+                        <button class="edit-btn p-1 bg-blue-500/85 text-white rounded-md hover:bg-blue-600 transition-colors" title="Ajustar posición de foto">
+                            <i class="ph ph-pencil-simple text-sm"></i>
+                        </button>
+                        <button class="delete-btn p-1 bg-red-500/85 text-white rounded-md hover:bg-red-600 transition-colors" title="Quitar foto">
+                            <i class="ph ph-trash text-sm"></i>
+                        </button>
+                    ` : ''}
+                    <button class="delete-cell-btn p-1 bg-slate-600/80 text-white rounded-md hover:bg-slate-700 transition-colors" title="Eliminar cuadro">
+                        <i class="ph ph-minus-circle text-sm"></i>
+                    </button>
+                </div>
+            `;
+
+            const imgTransformStyle = `object-position: ${posX}% ${posY}%; transform: scale(${photoScale}); transform-origin: ${posX}% ${posY}%;`;
 
             const photoLayer = hasImage
-                ? `<img src="${photoUrl(activeCurso, index, data._v)}" alt="${escapeHtml(displayName)}" class="absolute inset-0 w-full h-full object-cover" />`
+                ? `<img src="${photoUrl(activeCurso, index, data._v)}" alt="${escapeHtml(displayName)}" class="absolute inset-0 w-full h-full object-cover" style="${imgTransformStyle}" />`
                 : `
                     <div class="absolute inset-0 flex flex-col items-center justify-center pb-[28%] p-3">
                         <i class="ph ph-camera text-3xl mb-1 text-slate-400 drop-icon"></i>
@@ -751,8 +771,6 @@
                     </div>
                 `;
 
-            // Placa identificatoria al pie: rectángulo negro translúcido para fotos
-            // (sin gradiente — contraste constante incluso sobre ropa blanca)
             const overlayStyle = hasImage
                 ? 'background: rgba(0,0,0,0.72); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); color: #ffffff; text-shadow: 0 1px 2px rgba(0,0,0,0.5); border-top: 1px solid rgba(255,255,255,0.12);'
                 : 'background: rgba(255,255,255,0.95); color: #334155; border-top: 1px solid #e2e8f0;';
@@ -771,10 +789,9 @@
                 </div>
             `;
 
-            cell.innerHTML = photoLayer + positionBadge + deleteBtn + infoArea;
+            cell.innerHTML = photoLayer + positionBadge + actionBtns + infoArea;
 
             if (hasImage) {
-                // Retry si la imagen no carga (cold start, glitch transitorio, etc.)
                 const imgEl = cell.querySelector('img');
                 if (imgEl) {
                     let retries = 0;
@@ -782,20 +799,28 @@
                     imgEl.addEventListener('error', () => {
                         if (retries < 2) {
                             retries++;
-                            setTimeout(() => {
-                                imgEl.src = `${baseSrc}&r=${Date.now()}`;
-                            }, 400 * retries);
+                            setTimeout(() => { imgEl.src = `${baseSrc}&r=${Date.now()}`; }, 400 * retries);
                         } else {
                             imgEl.style.opacity = '0.25';
                             imgEl.title = 'No se pudo cargar la foto, intenta refrescar la página';
                         }
                     });
                 }
+                cell.querySelector('.edit-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (cell.classList.contains('cell-busy')) return;
+                    enterPhotoEditMode(cell, index);
+                });
                 cell.querySelector('.delete-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     removePhoto(index, cell);
                 });
             }
+            cell.querySelector('.delete-cell-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (cell.classList.contains('cell-busy')) return;
+                deleteCell(index, cell);
+            });
             cell.querySelector('.info-area').addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (cell.classList.contains('cell-busy')) return;
@@ -926,7 +951,7 @@
             const inputName = infoArea.querySelector('.edit-name');
             const inputRut = infoArea.querySelector('.edit-rut');
             inputName.focus();
-            inputName.selectionStart = inputName.selectionEnd = inputName.value.length;
+            inputName.select();
 
             let saved = false;
             const save = async () => {
@@ -955,16 +980,162 @@
             };
 
             inputName.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); inputRut.focus(); }
+                if (e.key === 'Enter') { e.preventDefault(); inputRut.focus(); inputRut.select(); }
                 if (e.key === 'Escape') { saved = true; paintCell(cell, index); }
             });
             inputRut.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); save(); }
                 if (e.key === 'Escape') { saved = true; paintCell(cell, index); }
             });
-            infoArea.addEventListener('focusout', (e) => {
-                if (!infoArea.contains(e.relatedTarget)) save();
+            // Usamos setTimeout + document.activeElement para evitar guardado prematuro
+            // cuando e.relatedTarget es null en algunos navegadores al pasar entre inputs
+            infoArea.addEventListener('focusout', () => {
+                setTimeout(() => {
+                    if (!infoArea.contains(document.activeElement)) save();
+                }, 0);
             });
+        }
+
+        // ==================== PHOTO EDIT MODE ====================
+        function enterPhotoEditMode(cell, index) {
+            const album = albums[activeCurso];
+            const data = album.slots[index];
+            if (!data.hasPhoto) return;
+            const imgEl = cell.querySelector('img');
+            if (!imgEl) return;
+
+            let currentX = data.photoPositionX ?? 50;
+            let currentY = data.photoPositionY ?? 50;
+            let currentScale = data.photoScale ?? 1;
+
+            cell.classList.add('photo-editing');
+
+            const applyTransform = () => {
+                imgEl.style.objectPosition = `${currentX}% ${currentY}%`;
+                imgEl.style.transform = `scale(${currentScale})`;
+                imgEl.style.transformOrigin = `${currentX}% ${currentY}%`;
+            };
+            applyTransform();
+
+            const toolbar = document.createElement('div');
+            toolbar.className = 'photo-edit-toolbar absolute inset-x-0 top-0 z-30 flex items-center justify-center gap-1 px-1 py-1.5 bg-black/75';
+            toolbar.innerHTML = `
+                <button class="et-zout w-7 h-7 flex items-center justify-center text-white bg-white/20 rounded hover:bg-white/40" title="Alejar"><i class="ph ph-minus text-xs"></i></button>
+                <button class="et-zin  w-7 h-7 flex items-center justify-center text-white bg-white/20 rounded hover:bg-white/40" title="Acercar"><i class="ph ph-plus text-xs"></i></button>
+                <button class="et-rst  w-7 h-7 flex items-center justify-center text-white bg-white/20 rounded hover:bg-white/40" title="Centrar"><i class="ph ph-arrows-in text-xs"></i></button>
+                <button class="et-ok   w-7 h-7 flex items-center justify-center text-emerald-400 bg-white/20 rounded hover:bg-white/40" title="Guardar"><i class="ph ph-check text-xs"></i></button>
+                <button class="et-x    w-7 h-7 flex items-center justify-center text-red-400 bg-white/20 rounded hover:bg-white/40" title="Cancelar"><i class="ph ph-x text-xs"></i></button>
+            `;
+            cell.appendChild(toolbar);
+
+            let isDragging = false, dragSX, dragSY, dragPX, dragPY;
+            const startDrag = (cx, cy) => { isDragging = true; dragSX = cx; dragSY = cy; dragPX = currentX; dragPY = currentY; };
+            const moveDrag = (cx, cy) => {
+                if (!isDragging) return;
+                const rect = cell.getBoundingClientRect();
+                const sensitivity = 100 / currentScale;
+                currentX = Math.max(0, Math.min(100, dragPX - ((cx - dragSX) / rect.width)  * sensitivity));
+                currentY = Math.max(0, Math.min(100, dragPY - ((cy - dragSY) / rect.height) * sensitivity));
+                applyTransform();
+            };
+
+            const onMD = (e) => { if (!e.target.closest('button')) { startDrag(e.clientX, e.clientY); e.preventDefault(); } };
+            const onMM = (e) => moveDrag(e.clientX, e.clientY);
+            const onMU = () => { isDragging = false; };
+            const onTS = (e) => { if (!e.target.closest('button')) startDrag(e.touches[0].clientX, e.touches[0].clientY); };
+            const onTM = (e) => { e.preventDefault(); moveDrag(e.touches[0].clientX, e.touches[0].clientY); };
+            const onTE = () => { isDragging = false; };
+
+            cell.addEventListener('mousedown', onMD);
+            document.addEventListener('mousemove', onMM);
+            document.addEventListener('mouseup', onMU);
+            cell.addEventListener('touchstart', onTS, { passive: true });
+            cell.addEventListener('touchmove', onTM, { passive: false });
+            cell.addEventListener('touchend', onTE);
+
+            const cleanup = () => {
+                cell.removeEventListener('mousedown', onMD);
+                document.removeEventListener('mousemove', onMM);
+                document.removeEventListener('mouseup', onMU);
+                cell.removeEventListener('touchstart', onTS);
+                cell.removeEventListener('touchmove', onTM);
+                cell.removeEventListener('touchend', onTE);
+                toolbar.remove();
+                cell.classList.remove('photo-editing');
+            };
+
+            toolbar.querySelector('.et-zin').addEventListener('click', (e) => {
+                e.stopPropagation();
+                currentScale = Math.min(3, Math.round((currentScale + 0.15) * 100) / 100);
+                applyTransform();
+            });
+            toolbar.querySelector('.et-zout').addEventListener('click', (e) => {
+                e.stopPropagation();
+                currentScale = Math.max(1, Math.round((currentScale - 0.15) * 100) / 100);
+                applyTransform();
+            });
+            toolbar.querySelector('.et-rst').addEventListener('click', (e) => {
+                e.stopPropagation();
+                currentX = 50; currentY = 50; currentScale = 1;
+                applyTransform();
+            });
+            toolbar.querySelector('.et-ok').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                cleanup();
+                cell.classList.add('cell-busy');
+                try {
+                    const result = await api('/api/info', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({
+                            curso: activeCurso, position: index,
+                            photoPositionX: Math.round(currentX * 10) / 10,
+                            photoPositionY: Math.round(currentY * 10) / 10,
+                            photoScale: Math.round(currentScale * 100) / 100
+                        })
+                    });
+                    album.slots[index] = { ...album.slots[index], ...result.slot };
+                } catch (err) {
+                    toast(`Error guardando: ${err.message}`, 'error');
+                } finally {
+                    cell.classList.remove('cell-busy');
+                    paintCell(cell, index);
+                }
+            });
+            toolbar.querySelector('.et-x').addEventListener('click', (e) => {
+                e.stopPropagation();
+                cleanup();
+                paintCell(cell, index);
+            });
+        }
+
+        // ==================== DELETE CELL ====================
+        async function deleteCell(index, cell) {
+            const album = albums[activeCurso];
+            const data = album.slots[index];
+            const label = data.name ? `"${data.name}"` : `cuadro ${index + 1}`;
+            if (!confirm(`¿Eliminar ${label}? Se borrarán la foto y los datos. Esta acción no se puede deshacer.`)) return;
+
+            cell.classList.add('cell-busy');
+            try {
+                const result = await api('/api/delete-slot', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ curso: activeCurso, position: index })
+                });
+                const prevSlots = album.slots.slice();
+                album.size = result.size;
+                album.slots = result.slots.map((s, i) => ({
+                    ...s,
+                    _v: i < index ? (prevSlots[i]?._v || s.photoUpdatedAt || Date.now())
+                                  : (prevSlots[i + 1]?._v || s.photoUpdatedAt || Date.now())
+                }));
+                renderGrid();
+                toast('Cuadro eliminado');
+            } catch (err) {
+                cell.classList.remove('cell-busy');
+                toast(`Error: ${err.message}`, 'error');
+            }
         }
 
         // ==================== EXCEL ====================
@@ -1147,14 +1318,24 @@
                             const img = await loadImage(photoUrl(activeCurso, realIdx, slot._v));
                             const imgRatio = img.width / img.height;
                             const boxRatio = cellW / cellH;
-                            let sw, sh, sx, sy;
+                            const posX  = (slot.photoPositionX ?? 50) / 100;
+                            const posY  = (slot.photoPositionY ?? 50) / 100;
+                            const scale = slot.photoScale ?? 1;
+
+                            let baseSW, baseSH, baseSX, baseSY;
                             if (imgRatio > boxRatio) {
-                                sh = img.height; sw = sh * boxRatio;
-                                sx = (img.width - sw) / 2; sy = 0;
+                                baseSH = img.height; baseSW = baseSH * boxRatio;
+                                baseSX = (img.width  - baseSW) * posX; baseSY = 0;
                             } else {
-                                sw = img.width; sh = sw / boxRatio;
-                                sx = 0; sy = (img.height - sh) / 2;
+                                baseSW = img.width;  baseSH = baseSW / boxRatio;
+                                baseSX = 0; baseSY = (img.height - baseSH) * posY;
                             }
+                            const sw = baseSW / scale;
+                            const sh = baseSH / scale;
+                            const anchorX = baseSX + baseSW * posX;
+                            const anchorY = baseSY + baseSH * posY;
+                            const sx = Math.max(0, Math.min(img.width  - sw, anchorX - sw * posX));
+                            const sy = Math.max(0, Math.min(img.height - sh, anchorY - sh * posY));
                             ctx.drawImage(img, sx, sy, sw, sh, x, y, cellW, cellH);
                         } catch (err) {
                             console.error('img', realIdx, err);

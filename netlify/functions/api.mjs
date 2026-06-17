@@ -9,6 +9,7 @@ export const config = {
     '/api/bulk-info',
     '/api/expand',
     '/api/shrink',
+    '/api/delete-slot',
     '/api/login',
     '/api/logout',
     '/api/me'
@@ -35,7 +36,7 @@ const stores = () => ({
   photos: getStore(PHOTO_STORE)
 });
 
-const emptySlot = () => ({ name: '', rut: '', hasPhoto: false, contentType: null, photoUpdatedAt: 0 });
+const emptySlot = () => ({ name: '', rut: '', hasPhoto: false, contentType: null, photoUpdatedAt: 0, photoPositionX: 50, photoPositionY: 50, photoScale: 1 });
 
 async function loadMeta(curso) {
   const { meta, photos } = stores();
@@ -323,6 +324,9 @@ export default async (request) => {
       ensureSize(meta, position);
       if (name !== undefined) meta.slots[position].name = String(name).trim();
       if (rut !== undefined) meta.slots[position].rut = String(rut).trim();
+      if (typeof parsedBody.photoPositionX === 'number') meta.slots[position].photoPositionX = Math.max(0, Math.min(100, parsedBody.photoPositionX));
+      if (typeof parsedBody.photoPositionY === 'number') meta.slots[position].photoPositionY = Math.max(0, Math.min(100, parsedBody.photoPositionY));
+      if (typeof parsedBody.photoScale === 'number') meta.slots[position].photoScale = Math.max(1, Math.min(3, parsedBody.photoScale));
       await saveMeta(curso, meta);
       return json({ ok: true, slot: meta.slots[position] });
     }
@@ -353,6 +357,38 @@ export default async (request) => {
       meta.size = meta.slots.length;
       await saveMeta(curso, meta);
       return json({ ok: true, size: meta.size });
+    }
+
+    if (path === 'delete-slot' && method === 'POST') {
+      parsedBody = await request.json();
+      const { curso, position } = parsedBody;
+      if (!curso || typeof position !== 'number') return err('curso and position required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
+      const meta = await loadMeta(curso);
+      if (position < 0 || position >= meta.slots.length) return err('invalid position');
+
+      const { photos } = stores();
+      if (meta.slots[position].hasPhoto) {
+        try { await photos.delete(`photo:${curso}:${position}`); } catch {}
+      }
+      // Shift subsequent photo blobs one position back (sequential to avoid race)
+      for (let i = position + 1; i < meta.slots.length; i++) {
+        if (meta.slots[i].hasPhoto) {
+          try {
+            const result = await photos.getWithMetadata(`photo:${curso}:${i}`, { type: 'arrayBuffer' });
+            if (result) {
+              await photos.set(`photo:${curso}:${i - 1}`, result.data, { metadata: result.metadata });
+              await photos.delete(`photo:${curso}:${i}`);
+            }
+          } catch (e) {
+            console.error(`move blob ${i}→${i - 1}:`, e?.message);
+          }
+        }
+      }
+      meta.slots.splice(position, 1);
+      meta.size = meta.slots.length;
+      await saveMeta(curso, meta);
+      return json({ ok: true, size: meta.size, slots: meta.slots });
     }
 
     if (path === 'shrink' && method === 'POST') {
