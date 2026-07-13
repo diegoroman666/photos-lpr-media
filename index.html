@@ -971,13 +971,18 @@
                         e.preventDefault();
                         return;
                     }
-                    e.dataTransfer.effectAllowed = 'move';
-                    e.dataTransfer.setData('application/x-cuadro', String(index));
-                    try { e.dataTransfer.setData('text/plain', `cuadro:${index}`); } catch {}
-                    try { e.dataTransfer.setDragImage(cell, cell.offsetWidth / 2, 24); } catch {}
+                    draggingCuadroIndex = index;
+                    if (e.dataTransfer) {
+                        e.dataTransfer.effectAllowed = 'move';
+                        try { e.dataTransfer.setData('text/plain', `cuadro:${index}`); } catch {}
+                        try { e.dataTransfer.setDragImage(cell, cell.offsetWidth / 2, 24); } catch {}
+                    }
                     cell.classList.add('cuadro-dragging');
                 });
-                moveHandle.addEventListener('dragend', () => cell.classList.remove('cuadro-dragging'));
+                moveHandle.addEventListener('dragend', () => {
+                    draggingCuadroIndex = null;
+                    cell.classList.remove('cuadro-dragging');
+                });
                 // Evita que el clic del asa dispare la subida de foto en celdas vacías.
                 moveHandle.addEventListener('click', (e) => e.stopPropagation());
             }
@@ -1162,13 +1167,17 @@
         }
 
         // ==================== UPLOAD/EDIT/DELETE ====================
-        const isCuadroDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('application/x-cuadro');
+        // Índice del cuadro que se está arrastrando (más robusto entre navegadores
+        // que depender del MIME custom del dataTransfer, que Safari/Firefox pueden
+        // bloquear durante el arrastre).
+        let draggingCuadroIndex = null;
+        const isCuadroDrag = () => draggingCuadroIndex !== null;
 
         function handleDragOver(e, cell) {
             e.preventDefault(); e.stopPropagation();
-            if (isCuadroDrag(e)) {
+            if (isCuadroDrag()) {
                 // Arrastre de un cuadro completo: resaltado de intercambio (morado).
-                e.dataTransfer.dropEffect = 'move';
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
                 cell.classList.add('ring-2', 'ring-purple-400', 'bg-purple-50', 'z-10');
                 return;
             }
@@ -1185,10 +1194,11 @@
         function handleDrop(e, index, cell) {
             e.preventDefault(); e.stopPropagation();
             // Intercambio de cuadros (arrastrar un cuadro sobre otro).
-            if (isCuadroDrag(e)) {
-                const from = parseInt(e.dataTransfer.getData('application/x-cuadro'));
+            if (isCuadroDrag()) {
+                const from = draggingCuadroIndex;
+                draggingCuadroIndex = null;
                 paintCell(cell, index); // limpiar resaltado
-                if (Number.isNaN(from) || from === index) return;
+                if (from === null || Number.isNaN(from) || from === index) return;
                 swapCuadros(from, index);
                 return;
             }
