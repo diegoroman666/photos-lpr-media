@@ -10,6 +10,10 @@ export const config = {
     '/api/expand',
     '/api/shrink',
     '/api/delete-slot',
+    '/api/trash',
+    '/api/trash-photo',
+    '/api/trash-restore',
+    '/api/trash-delete',
     '/api/settings',
     '/api/logo',
     '/api/login',
@@ -96,6 +100,69 @@ const ensureSize = (meta, position) => {
   while (meta.slots.length <= position) meta.slots.push(emptySlot());
   meta.size = meta.slots.length;
 };
+
+// ---------- TRASH (papelera / historial de restauración) ----------
+// Al eliminar una foto o un cuadro completo, guardamos una copia (blob + datos)
+// en la papelera para poder restaurarla desde el "Historial". El índice vive en
+// el meta store bajo `trash:${curso}` y los blobs bajo `trash:photo:${curso}:${id}`.
+
+const MAX_TRASH = 100;
+
+async function loadTrash(curso) {
+  const { meta } = stores();
+  const raw = await meta.get(`trash:${curso}`, { type: 'json' }).catch(() => null);
+  return (raw && Array.isArray(raw.items)) ? raw : { items: [] };
+}
+
+async function saveTrash(curso, data) {
+  const { meta } = stores();
+  await meta.setJSON(`trash:${curso}`, data);
+}
+
+// Archiva un slot (con su foto si tiene) en la papelera. Debe llamarse ANTES de
+// borrar el blob original, porque lee la foto desde `photo:${curso}:${position}`.
+async function archiveSlot(curso, slot, position, type) {
+  const { photos } = stores();
+  const id = crypto.randomUUID();
+  const entry = {
+    id,
+    type, // 'photo' (solo se borró la foto) | 'slot' (se borró el cuadro completo)
+    deletedAt: Date.now(),
+    originalPosition: position,
+    name: slot?.name || '',
+    rut: slot?.rut || '',
+    hasPhoto: false,
+    contentType: null,
+    photoPositionX: typeof slot?.photoPositionX === 'number' ? slot.photoPositionX : 50,
+    photoPositionY: typeof slot?.photoPositionY === 'number' ? slot.photoPositionY : 50,
+    photoScale: typeof slot?.photoScale === 'number' ? slot.photoScale : 1
+  };
+
+  if (slot?.hasPhoto) {
+    try {
+      const result = await photos.getWithMetadata(`photo:${curso}:${position}`, { type: 'arrayBuffer' });
+      if (result) {
+        await photos.set(`trash:photo:${curso}:${id}`, result.data, { metadata: result.metadata });
+        entry.hasPhoto = true;
+        entry.contentType = result.metadata?.contentType || slot.contentType || 'image/jpeg';
+      }
+    } catch (e) {
+      console.error('archive photo failed:', e?.message);
+    }
+  }
+
+  const trash = await loadTrash(curso);
+  trash.items.unshift(entry);
+  // Cap: descartar las entradas más antiguas (y sus blobs) si excedemos el límite.
+  while (trash.items.length > MAX_TRASH) {
+    const removed = trash.items.pop();
+    if (removed?.hasPhoto) {
+      try { await photos.delete(`trash:photo:${curso}:${removed.id}`); } catch {}
+    }
+  }
+  await saveTrash(curso, trash);
+  return entry;
+}
 
 // ---------- AUTH ----------
 
@@ -306,9 +373,11 @@ export default async (request) => {
       const pos = parseInt(url.searchParams.get('position'));
       if (!curso || Number.isNaN(pos)) return err('curso and position required');
       if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
+      const meta = await loadMeta(curso);
+      // Archivar en la papelera antes de borrar (para poder restaurar).
+      if (meta.slots[pos]) await archiveSlot(curso, meta.slots[pos], pos, 'photo');
       const { photos } = stores();
       await photos.delete(`photo:${curso}:${pos}`);
-      const meta = await loadMeta(curso);
       if (meta.slots[pos]) {
         meta.slots[pos].hasPhoto = false;
         meta.slots[pos].contentType = null;
@@ -369,6 +438,9 @@ export default async (request) => {
       const meta = await loadMeta(curso);
       if (position < 0 || position >= meta.slots.length) return err('invalid position');
 
+      // Archivar el cuadro (con su foto) en la papelera antes de eliminarlo.
+      await archiveSlot(curso, meta.slots[position], position, 'slot');
+
       const { photos } = stores();
       if (meta.slots[position].hasPhoto) {
         try { await photos.delete(`photo:${curso}:${position}`); } catch {}
@@ -410,6 +482,106 @@ export default async (request) => {
       meta.size = meta.slots.length;
       await saveMeta(curso, meta);
       return json({ ok: true, size: meta.size });
+    }
+
+    if (path === 'trash' && method === 'GET') {
+      const curso = cursoFromQuery;
+      if (!curso) return err('curso required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
+      const trash = await loadTrash(curso);
+      // Solo metadatos; las miniaturas se piden aparte vía /api/trash-photo.
+      const items = trash.items.map(it => ({
+        id: it.id,
+        type: it.type,
+        deletedAt: it.deletedAt,
+        originalPosition: it.originalPosition,
+        name: it.name,
+        rut: it.rut,
+        hasPhoto: !!it.hasPhoto
+      }));
+      return json({ items });
+    }
+
+    if (path === 'trash-photo' && method === 'GET') {
+      const curso = cursoFromQuery;
+      const id = url.searchParams.get('id');
+      if (!curso || !id) return err('curso and id required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
+      const { photos } = stores();
+      const result = await photos.getWithMetadata(`trash:photo:${curso}:${id}`, { type: 'arrayBuffer' }).catch(() => null);
+      if (!result) return new Response('not found', { status: 404 });
+      return new Response(result.data, {
+        status: 200,
+        headers: {
+          'content-type': result.metadata?.contentType || 'image/jpeg',
+          'cache-control': 'public, max-age=2592000'
+        }
+      });
+    }
+
+    if (path === 'trash-restore' && method === 'POST') {
+      parsedBody = await request.json();
+      const { curso, id } = parsedBody;
+      if (!curso || !id) return err('curso and id required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
+      const trash = await loadTrash(curso);
+      const idx = trash.items.findIndex(it => it.id === id);
+      if (idx === -1) return err('not found', 404);
+      const entry = trash.items[idx];
+
+      // Restaurar como un cuadro nuevo al final (evita pisar datos existentes
+      // dado que las posiciones pueden haber cambiado desde el borrado).
+      const meta = await loadMeta(curso);
+      const newPos = meta.slots.length;
+      const slot = emptySlot();
+      slot.name = entry.name || '';
+      slot.rut = entry.rut || '';
+      slot.photoPositionX = typeof entry.photoPositionX === 'number' ? entry.photoPositionX : 50;
+      slot.photoPositionY = typeof entry.photoPositionY === 'number' ? entry.photoPositionY : 50;
+      slot.photoScale = typeof entry.photoScale === 'number' ? entry.photoScale : 1;
+
+      const { photos } = stores();
+      if (entry.hasPhoto) {
+        try {
+          const result = await photos.getWithMetadata(`trash:photo:${curso}:${id}`, { type: 'arrayBuffer' });
+          if (result) {
+            await photos.set(`photo:${curso}:${newPos}`, result.data, { metadata: result.metadata });
+            slot.hasPhoto = true;
+            slot.contentType = result.metadata?.contentType || entry.contentType || 'image/jpeg';
+            slot.photoUpdatedAt = Date.now();
+          }
+        } catch (e) {
+          console.error('restore photo failed:', e?.message);
+        }
+      }
+
+      meta.slots.push(slot);
+      meta.size = meta.slots.length;
+      await saveMeta(curso, meta);
+
+      // Quitar de la papelera y borrar el blob archivado.
+      if (entry.hasPhoto) { try { await photos.delete(`trash:photo:${curso}:${id}`); } catch {} }
+      trash.items.splice(idx, 1);
+      await saveTrash(curso, trash);
+      return json({ ok: true, position: newPos, slot, size: meta.size });
+    }
+
+    if (path === 'trash-delete' && method === 'POST') {
+      parsedBody = await request.json();
+      const { curso, id } = parsedBody;
+      if (!curso || !id) return err('curso and id required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
+      const trash = await loadTrash(curso);
+      const idx = trash.items.findIndex(it => it.id === id);
+      if (idx === -1) return json({ ok: true }); // ya no existe: idempotente
+      const entry = trash.items[idx];
+      if (entry.hasPhoto) {
+        const { photos } = stores();
+        try { await photos.delete(`trash:photo:${curso}:${id}`); } catch {}
+      }
+      trash.items.splice(idx, 1);
+      await saveTrash(curso, trash);
+      return json({ ok: true });
     }
 
     if (path === 'settings' && method === 'GET') {

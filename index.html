@@ -125,6 +125,10 @@
                         <i class="ph ph-plus-square text-xl"></i>
                         Agregar Cuadro
                     </button>
+                    <button id="btn-history" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 shadow-sm transition-all" title="Papelera: restaurar cuadros y fotos eliminados">
+                        <i class="ph ph-trash text-xl"></i>
+                        Historial
+                    </button>
                     <button id="btn-remove-cell" class="flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 shadow-sm transition-all hidden">
                         <i class="ph ph-minus-square text-xl"></i>
                         Quitar último
@@ -250,6 +254,26 @@
         </div>
     </div>
 
+    <!-- HISTORY / TRASH MODAL -->
+    <div id="history-modal" class="modal-backdrop">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 p-6 w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="ph ph-trash text-amber-600"></i>
+                    <span>Historial (papelera)</span>
+                </h2>
+                <button id="history-modal-close" class="p-1 rounded text-slate-400 hover:bg-slate-100" aria-label="Cerrar">
+                    <i class="ph ph-x text-xl"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-4">
+                Cuadros y fotos eliminados de <span id="history-curso-label" class="font-semibold text-slate-600"></span>.
+                Al restaurar, el cuadro con su foto vuelve al final del curso.
+            </p>
+            <div id="history-modal-content" class="space-y-2.5"></div>
+        </div>
+    </div>
+
     <footer class="text-center text-xs text-slate-400 py-4 border-t border-slate-200 mt-auto">
         Sitio desarrollado por Diego Román · 2026 · Derechos reservados
     </footer>
@@ -353,6 +377,11 @@
         const btnDownload2 = document.getElementById('btn-download-2');
         const btnAddCell = document.getElementById('btn-add-cell');
         const btnRemoveCell = document.getElementById('btn-remove-cell');
+        const btnHistory = document.getElementById('btn-history');
+        const historyModal = document.getElementById('history-modal');
+        const historyModalClose = document.getElementById('history-modal-close');
+        const historyModalContent = document.getElementById('history-modal-content');
+        const historyCursoLabel = document.getElementById('history-curso-label');
         const toastEl = document.getElementById('toast');
         const schoolLogoImg = document.getElementById('school-logo-img');
         const schoolNameText = document.getElementById('school-name-text');
@@ -904,6 +933,11 @@
             cell.querySelector('.info-area').addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (cell.classList.contains('cell-busy')) return;
+                // Si ya estamos editando, un clic dentro del área (p.ej. pasar del
+                // nombre al RUT con el mouse) NO debe reconstruir los inputs, porque
+                // eso descartaría lo que se acaba de escribir. Solo dejamos que el
+                // clic mueva el foco al input correspondiente.
+                if (cell.classList.contains('editing-info')) return;
                 editInfo(cell, index);
             });
         }
@@ -1074,6 +1108,9 @@
             const album = albums[activeCurso];
             const data = album.slots[index];
             const infoArea = cell.querySelector('.info-area');
+            // Marca de modo edición: evita que un clic dentro del área (mouse del
+            // nombre al RUT) vuelva a llamar a editInfo y descarte lo escrito.
+            cell.classList.add('editing-info');
             // Override styling so inputs are clearly visible regardless of cell state
             infoArea.style.background = 'rgba(255,255,255,0.96)';
             infoArea.style.color = '#0f172a';
@@ -1567,6 +1604,126 @@
             } catch (e) {
                 toast(`Error: ${e.message}`, 'error');
             }
+        });
+
+        // ==================== HISTORIAL / PAPELERA ====================
+        function closeHistoryModal() {
+            historyModal.classList.remove('show');
+        }
+
+        async function openHistoryModal() {
+            if (!activeCurso) { toast('Selecciona un curso primero'); return; }
+            historyCursoLabel.textContent = fullCourseName(activeCurso);
+            historyModalContent.innerHTML = `
+                <div class="flex items-center justify-center gap-3 text-slate-500 py-6">
+                    <i class="ph ph-spinner animate-spin text-2xl"></i>
+                    <span>Cargando historial…</span>
+                </div>`;
+            historyModal.classList.add('show');
+            try {
+                const data = await api(`/api/trash?curso=${encodeURIComponent(activeCurso)}`);
+                renderHistory(data.items || []);
+            } catch (e) {
+                historyModalContent.innerHTML = `<div class="text-center text-sm text-red-600 py-6">Error cargando historial: ${e.message}</div>`;
+            }
+        }
+
+        function renderHistory(items) {
+            if (!items.length) {
+                historyModalContent.innerHTML = `
+                    <div class="text-center text-slate-400 py-8">
+                        <i class="ph ph-trash text-4xl mb-2 block"></i>
+                        <p class="text-sm">La papelera está vacía.</p>
+                    </div>`;
+                return;
+            }
+            const fmtDate = (ts) => {
+                try {
+                    return new Date(ts).toLocaleString('es-CL', {
+                        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                    });
+                } catch { return ''; }
+            };
+            historyModalContent.innerHTML = items.map(it => {
+                const thumb = it.hasPhoto
+                    ? `<img src="/api/trash-photo?curso=${encodeURIComponent(activeCurso)}&id=${encodeURIComponent(it.id)}" alt="" class="w-12 h-12 object-cover rounded-lg border border-slate-200 bg-slate-100" />`
+                    : `<div class="w-12 h-12 rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-300"><i class="ph ph-user text-xl"></i></div>`;
+                const typeLabel = it.type === 'slot' ? 'Cuadro eliminado' : 'Foto eliminada';
+                const name = it.name ? it.name : '<span class="text-slate-400 italic">Sin nombre</span>';
+                return `
+                    <div class="flex items-center gap-3 p-2.5 rounded-lg border border-slate-200 bg-white" data-id="${it.id}">
+                        ${thumb}
+                        <div class="flex-grow min-w-0">
+                            <div class="text-sm font-semibold text-slate-800 truncate">${name}</div>
+                            <div class="text-xs text-slate-500 truncate">${it.rut ? it.rut + ' · ' : ''}${typeLabel}</div>
+                            <div class="text-[10px] text-slate-400">${fmtDate(it.deletedAt)}</div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button class="history-restore-btn flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all" title="Restaurar">
+                                <i class="ph ph-arrow-counter-clockwise"></i> Restaurar
+                            </button>
+                            <button class="history-delete-btn p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Eliminar definitivamente">
+                                <i class="ph ph-trash-simple"></i>
+                            </button>
+                        </div>
+                    </div>`;
+            }).join('');
+
+            historyModalContent.querySelectorAll('.history-restore-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const row = btn.closest('[data-id]');
+                    const id = row.dataset.id;
+                    btn.disabled = true;
+                    btn.innerHTML = `<i class="ph ph-spinner animate-spin"></i> Restaurando…`;
+                    try {
+                        await api('/api/trash-restore', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ curso: activeCurso, id })
+                        });
+                        await loadAlbum(activeCurso);
+                        renderGrid();
+                        row.remove();
+                        if (!historyModalContent.querySelector('[data-id]')) renderHistory([]);
+                        toast('✓ Restaurado al final del curso');
+                    } catch (err) {
+                        btn.disabled = false;
+                        btn.innerHTML = `<i class="ph ph-arrow-counter-clockwise"></i> Restaurar`;
+                        toast(`Error restaurando: ${err.message}`, 'error');
+                    }
+                });
+            });
+
+            historyModalContent.querySelectorAll('.history-delete-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const row = btn.closest('[data-id]');
+                    const id = row.dataset.id;
+                    if (!confirm('¿Eliminar definitivamente este elemento de la papelera? Esta acción no se puede deshacer.')) return;
+                    btn.disabled = true;
+                    try {
+                        await api('/api/trash-delete', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ curso: activeCurso, id })
+                        });
+                        row.remove();
+                        if (!historyModalContent.querySelector('[data-id]')) renderHistory([]);
+                        toast('Eliminado definitivamente');
+                    } catch (err) {
+                        btn.disabled = false;
+                        toast(`Error: ${err.message}`, 'error');
+                    }
+                });
+            });
+        }
+
+        btnHistory.addEventListener('click', openHistoryModal);
+        historyModalClose.addEventListener('click', closeHistoryModal);
+        historyModal.addEventListener('click', (e) => { if (e.target === historyModal) closeHistoryModal(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && historyModal.classList.contains('show')) closeHistoryModal();
         });
 
         // ==================== DOWNLOAD (en lotes) ====================
