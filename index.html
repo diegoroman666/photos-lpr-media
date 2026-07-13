@@ -46,6 +46,7 @@
         }
         .modal-backdrop.show { opacity: 1; pointer-events: auto; }
         .photo-editing { outline: 2px solid #3b82f6; outline-offset: -2px; }
+        .cuadro-dragging { opacity: 0.45; }
         .photo-editing img { cursor: move !important; user-select: none; }
     </style>
 </head>
@@ -82,25 +83,25 @@
 
             <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 text-center relative">
                 <div class="absolute top-4 right-4 flex items-center gap-3 text-sm">
+                    <button id="btn-edit-school"
+                        class="flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all"
+                        title="Ajustes del establecimiento (nombre y logo)">
+                        <i class="ph ph-gear text-lg"></i>
+                    </button>
                     <span id="auth-status" class="text-slate-500 hidden md:inline"></span>
                     <button id="btn-logout" class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all">
                         <i class="ph ph-sign-out"></i> Cerrar sesión
                     </button>
                 </div>
-                <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
-                <p class="text-slate-500 mb-3">Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.</p>
 
-                <!-- Establecimiento -->
-                <div id="school-bar" class="flex items-center justify-center gap-3 mb-5 min-h-[44px]">
+                <!-- Establecimiento (nombre y logo, arriba del título) -->
+                <div id="school-bar" class="flex items-center justify-center gap-3 mb-3 min-h-[40px] hidden">
                     <img id="school-logo-img" src="" alt="Logo" class="h-11 w-11 object-contain rounded-lg hidden" />
-                    <span id="school-name-text" class="text-base font-bold text-slate-700 hidden"></span>
-                    <button id="btn-edit-school"
-                        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all"
-                        title="Editar nombre y logo del establecimiento">
-                        <i class="ph ph-buildings text-sm"></i>
-                        <span id="school-btn-label">Agregar nombre/logo del establecimiento</span>
-                    </button>
+                    <span id="school-name-text" class="text-lg font-bold text-slate-700 hidden"></span>
                 </div>
+
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">Cuadro de Honor Escolar</h1>
+                <p class="text-slate-500 mb-5">Selecciona un curso y arrastra las fotos. Todo se guarda automáticamente.</p>
 
                 <div id="section-tabs" class="flex flex-wrap justify-center gap-2 mb-3"></div>
                 <div class="flex justify-center mb-3">
@@ -383,10 +384,10 @@
         const historyModalContent = document.getElementById('history-modal-content');
         const historyCursoLabel = document.getElementById('history-curso-label');
         const toastEl = document.getElementById('toast');
+        const schoolBar = document.getElementById('school-bar');
         const schoolLogoImg = document.getElementById('school-logo-img');
         const schoolNameText = document.getElementById('school-name-text');
         const btnEditSchool = document.getElementById('btn-edit-school');
-        const schoolBtnLabel = document.getElementById('school-btn-label');
         const schoolModal = document.getElementById('school-modal');
         const schoolModalClose = document.getElementById('school-modal-close');
         const schoolModalSave = document.getElementById('school-modal-save');
@@ -855,6 +856,9 @@
             // Botones de acción (top-right, apilados verticalmente al hover)
             const actionBtns = `
                 <div class="action-btns absolute top-1.5 right-1.5 z-10 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button class="move-handle p-1 bg-slate-700/80 text-white rounded-md hover:bg-slate-800 transition-colors cursor-grab active:cursor-grabbing" draggable="true" title="Arrastrar para mover/intercambiar el cuadro completo">
+                        <i class="ph ph-arrows-out-cardinal text-sm"></i>
+                    </button>
                     ${hasImage ? `
                         <button class="edit-btn p-1 bg-blue-500/85 text-white rounded-md hover:bg-blue-600 transition-colors" title="Ajustar posición de foto">
                             <i class="ph ph-pencil-simple text-sm"></i>
@@ -940,6 +944,25 @@
                 if (cell.classList.contains('editing-info')) return;
                 editInfo(cell, index);
             });
+
+            // Asa para arrastrar el cuadro completo y soltarlo sobre otro (intercambio).
+            const moveHandle = cell.querySelector('.move-handle');
+            if (moveHandle) {
+                moveHandle.addEventListener('dragstart', (e) => {
+                    if (cell.classList.contains('cell-busy') || cell.classList.contains('photo-editing')) {
+                        e.preventDefault();
+                        return;
+                    }
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('application/x-cuadro', String(index));
+                    try { e.dataTransfer.setData('text/plain', `cuadro:${index}`); } catch {}
+                    try { e.dataTransfer.setDragImage(cell, cell.offsetWidth / 2, 24); } catch {}
+                    cell.classList.add('cuadro-dragging');
+                });
+                moveHandle.addEventListener('dragend', () => cell.classList.remove('cuadro-dragging'));
+                // Evita que el clic del asa dispare la subida de foto en celdas vacías.
+                moveHandle.addEventListener('click', (e) => e.stopPropagation());
+            }
         }
 
         // ==================== IMAGE PROCESSING ====================
@@ -987,8 +1010,16 @@
         }
 
         // ==================== UPLOAD/EDIT/DELETE ====================
+        const isCuadroDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('application/x-cuadro');
+
         function handleDragOver(e, cell) {
             e.preventDefault(); e.stopPropagation();
+            if (isCuadroDrag(e)) {
+                // Arrastre de un cuadro completo: resaltado de intercambio (morado).
+                e.dataTransfer.dropEffect = 'move';
+                cell.classList.add('ring-2', 'ring-purple-400', 'bg-purple-50', 'z-10');
+                return;
+            }
             cell.classList.add('border-blue-500', 'bg-blue-50', 'scale-[1.02]', 'shadow-lg', 'z-10');
             const dt = cell.querySelector('.drop-text');
             const di = cell.querySelector('.drop-icon');
@@ -1001,9 +1032,41 @@
         }
         function handleDrop(e, index, cell) {
             e.preventDefault(); e.stopPropagation();
+            // Intercambio de cuadros (arrastrar un cuadro sobre otro).
+            if (isCuadroDrag(e)) {
+                const from = parseInt(e.dataTransfer.getData('application/x-cuadro'));
+                paintCell(cell, index); // limpiar resaltado
+                if (Number.isNaN(from) || from === index) return;
+                swapCuadros(from, index);
+                return;
+            }
             const files = e.dataTransfer.files;
             if (files && files.length > 0) uploadPhoto(index, files[0], cell);
             else paintCell(cell, index);
+        }
+
+        async function swapCuadros(from, to) {
+            const album = albums[activeCurso];
+            if (!album) return;
+            const cellFrom = gridContainer.querySelector(`[data-index="${from}"]`);
+            const cellTo = gridContainer.querySelector(`[data-index="${to}"]`);
+            cellFrom?.classList.add('cell-busy');
+            cellTo?.classList.add('cell-busy');
+            try {
+                const result = await api('/api/swap', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ curso: activeCurso, a: from, b: to })
+                });
+                album.slots = result.slots.map((s) => ({ ...s, _v: s.photoUpdatedAt || Date.now() }));
+                album.size = result.size;
+                renderGrid();
+                toast(`✓ Cuadros ${from + 1} y ${to + 1} intercambiados`);
+            } catch (e) {
+                cellFrom?.classList.remove('cell-busy');
+                cellTo?.classList.remove('cell-busy');
+                toast(`Error al intercambiar: ${e.message}`, 'error');
+            }
         }
 
         async function uploadPhoto(index, file, cell) {
@@ -1412,7 +1475,8 @@
                 schoolNameText.classList.add('hidden');
             }
 
-            schoolBtnLabel.textContent = (hasName || hasLogo) ? 'Editar establecimiento' : 'Agregar nombre/logo del establecimiento';
+            // Ocultar la barra completa si no hay nombre ni logo (evita un hueco sobre el título).
+            if (schoolBar) schoolBar.classList.toggle('hidden', !hasName && !hasLogo);
         }
 
         // Modal de edición del establecimiento
