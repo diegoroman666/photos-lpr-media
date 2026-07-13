@@ -933,6 +933,11 @@
             cell.querySelector('.info-area').addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (cell.classList.contains('cell-busy')) return;
+                // Si ya estamos editando, un clic dentro del área (p.ej. pasar del
+                // nombre al RUT con el mouse) NO debe reconstruir los inputs, porque
+                // eso descartaría lo que se acaba de escribir. Solo dejamos que el
+                // clic mueva el foco al input correspondiente.
+                if (cell.classList.contains('editing-info')) return;
                 editInfo(cell, index);
             });
         }
@@ -1103,6 +1108,9 @@
             const album = albums[activeCurso];
             const data = album.slots[index];
             const infoArea = cell.querySelector('.info-area');
+            // Marca de modo edición: evita que un clic dentro del área (mouse del
+            // nombre al RUT) vuelva a llamar a editInfo y descarte lo escrito.
+            cell.classList.add('editing-info');
             // Override styling so inputs are clearly visible regardless of cell state
             infoArea.style.background = 'rgba(255,255,255,0.96)';
             infoArea.style.color = '#0f172a';
