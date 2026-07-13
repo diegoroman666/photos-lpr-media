@@ -529,10 +529,9 @@ export default async (request) => {
       if (idx === -1) return err('not found', 404);
       const entry = trash.items[idx];
 
-      // Restaurar como un cuadro nuevo al final (evita pisar datos existentes
-      // dado que las posiciones pueden haber cambiado desde el borrado).
+      // Restaurar el cuadro con su nombre, RUT y foto en su POSICIÓN ORIGINAL
+      // (inverso de delete-slot). Si la posición ya no existe, se agrega al final.
       const meta = await loadMeta(curso);
-      const newPos = meta.slots.length;
       const slot = emptySlot();
       slot.name = entry.name || '';
       slot.rut = entry.rut || '';
@@ -540,12 +539,34 @@ export default async (request) => {
       slot.photoPositionY = typeof entry.photoPositionY === 'number' ? entry.photoPositionY : 50;
       slot.photoScale = typeof entry.photoScale === 'number' ? entry.photoScale : 1;
 
+      const target = Math.max(0, Math.min(
+        typeof entry.originalPosition === 'number' ? entry.originalPosition : meta.slots.length,
+        meta.slots.length
+      ));
+
       const { photos } = stores();
+      // Hacer espacio: correr las fotos existentes desde el final hasta `target`
+      // una posición hacia adelante (de mayor a menor para no pisar).
+      for (let i = meta.slots.length - 1; i >= target; i--) {
+        if (meta.slots[i].hasPhoto) {
+          try {
+            const r = await photos.getWithMetadata(`photo:${curso}:${i}`, { type: 'arrayBuffer' });
+            if (r) {
+              await photos.set(`photo:${curso}:${i + 1}`, r.data, { metadata: r.metadata });
+              await photos.delete(`photo:${curso}:${i}`);
+            }
+          } catch (e) {
+            console.error(`restore shift blob ${i}→${i + 1}:`, e?.message);
+          }
+        }
+      }
+
+      // Colocar la foto archivada en la posición destino.
       if (entry.hasPhoto) {
         try {
           const result = await photos.getWithMetadata(`trash:photo:${curso}:${id}`, { type: 'arrayBuffer' });
           if (result) {
-            await photos.set(`photo:${curso}:${newPos}`, result.data, { metadata: result.metadata });
+            await photos.set(`photo:${curso}:${target}`, result.data, { metadata: result.metadata });
             slot.hasPhoto = true;
             slot.contentType = result.metadata?.contentType || entry.contentType || 'image/jpeg';
             slot.photoUpdatedAt = Date.now();
@@ -555,7 +576,7 @@ export default async (request) => {
         }
       }
 
-      meta.slots.push(slot);
+      meta.slots.splice(target, 0, slot);
       meta.size = meta.slots.length;
       await saveMeta(curso, meta);
 
@@ -563,7 +584,7 @@ export default async (request) => {
       if (entry.hasPhoto) { try { await photos.delete(`trash:photo:${curso}:${id}`); } catch {} }
       trash.items.splice(idx, 1);
       await saveTrash(curso, trash);
-      return json({ ok: true, position: newPos, slot, size: meta.size });
+      return json({ ok: true, position: target, slot, size: meta.size });
     }
 
     if (path === 'trash-delete' && method === 'POST') {
