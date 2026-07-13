@@ -14,6 +14,7 @@ export const config = {
     '/api/trash-photo',
     '/api/trash-restore',
     '/api/trash-delete',
+    '/api/log',
     '/api/settings',
     '/api/logo',
     '/api/login',
@@ -162,6 +163,43 @@ async function archiveSlot(curso, slot, position, type) {
   }
   await saveTrash(curso, trash);
   return entry;
+}
+
+// ---------- REGISTRO DE ACCIONES (bitácora permanente) ----------
+// Deja constancia textual de cada eliminación/restauración con nombre y RUT,
+// para que ese dato quede siempre disponible aunque la papelera se vacíe.
+// Vive en el meta store bajo `log:${curso}`.
+
+const MAX_LOG = 500;
+
+async function loadLog(curso) {
+  const { meta } = stores();
+  const raw = await meta.get(`log:${curso}`, { type: 'json' }).catch(() => null);
+  return (raw && Array.isArray(raw.entries)) ? raw : { entries: [] };
+}
+
+async function saveLog(curso, data) {
+  const { meta } = stores();
+  await meta.setJSON(`log:${curso}`, data);
+}
+
+async function addLog(curso, action, { name = '', rut = '', hasPhoto = false } = {}) {
+  try {
+    const log = await loadLog(curso);
+    log.entries.unshift({
+      id: crypto.randomUUID(),
+      action, // 'delete-slot' | 'delete-photo' | 'restore'
+      name: name || '',
+      rut: rut || '',
+      hasPhoto: !!hasPhoto,
+      at: Date.now()
+    });
+    while (log.entries.length > MAX_LOG) log.entries.pop();
+    await saveLog(curso, log);
+  } catch (e) {
+    // El registro nunca debe romper la operación principal.
+    console.error('addLog failed:', e?.message);
+  }
 }
 
 // ---------- AUTH ----------
@@ -374,8 +412,11 @@ export default async (request) => {
       if (!curso || Number.isNaN(pos)) return err('curso and position required');
       if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
       const meta = await loadMeta(curso);
-      // Archivar en la papelera antes de borrar (para poder restaurar).
-      if (meta.slots[pos]) await archiveSlot(curso, meta.slots[pos], pos, 'photo');
+      // Archivar en la papelera antes de borrar (para poder restaurar) + registrar.
+      if (meta.slots[pos]) {
+        await archiveSlot(curso, meta.slots[pos], pos, 'photo');
+        await addLog(curso, 'delete-photo', { name: meta.slots[pos].name, rut: meta.slots[pos].rut, hasPhoto: true });
+      }
       const { photos } = stores();
       await photos.delete(`photo:${curso}:${pos}`);
       if (meta.slots[pos]) {
@@ -438,8 +479,13 @@ export default async (request) => {
       const meta = await loadMeta(curso);
       if (position < 0 || position >= meta.slots.length) return err('invalid position');
 
-      // Archivar el cuadro (con su foto) en la papelera antes de eliminarlo.
+      // Archivar el cuadro (con su foto) en la papelera antes de eliminarlo + registrar.
       await archiveSlot(curso, meta.slots[position], position, 'slot');
+      await addLog(curso, 'delete-slot', {
+        name: meta.slots[position].name,
+        rut: meta.slots[position].rut,
+        hasPhoto: !!meta.slots[position].hasPhoto
+      });
 
       const { photos } = stores();
       if (meta.slots[position].hasPhoto) {
@@ -580,6 +626,9 @@ export default async (request) => {
       meta.size = meta.slots.length;
       await saveMeta(curso, meta);
 
+      // Registrar la restauración (nombre y RUT quedan constancia permanente).
+      await addLog(curso, 'restore', { name: entry.name, rut: entry.rut, hasPhoto: !!entry.hasPhoto });
+
       // Quitar de la papelera y borrar el blob archivado.
       if (entry.hasPhoto) { try { await photos.delete(`trash:photo:${curso}:${id}`); } catch {} }
       trash.items.splice(idx, 1);
@@ -603,6 +652,14 @@ export default async (request) => {
       trash.items.splice(idx, 1);
       await saveTrash(curso, trash);
       return json({ ok: true });
+    }
+
+    if (path === 'log' && method === 'GET') {
+      const curso = cursoFromQuery;
+      if (!curso) return err('curso required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
+      const log = await loadLog(curso);
+      return json({ entries: log.entries });
     }
 
     if (path === 'settings' && method === 'GET') {

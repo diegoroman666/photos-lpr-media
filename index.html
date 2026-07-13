@@ -1621,54 +1621,122 @@
                 </div>`;
             historyModal.classList.add('show');
             try {
-                const data = await api(`/api/trash?curso=${encodeURIComponent(activeCurso)}`);
-                renderHistory(data.items || []);
+                const [trash, log] = await Promise.all([
+                    api(`/api/trash?curso=${encodeURIComponent(activeCurso)}`),
+                    api(`/api/log?curso=${encodeURIComponent(activeCurso)}`)
+                ]);
+                renderHistory(trash.items || [], log.entries || []);
             } catch (e) {
                 historyModalContent.innerHTML = `<div class="text-center text-sm text-red-600 py-6">Error cargando historial: ${e.message}</div>`;
             }
         }
 
-        function renderHistory(items) {
-            if (!items.length) {
-                historyModalContent.innerHTML = `
-                    <div class="text-center text-slate-400 py-8">
-                        <i class="ph ph-trash text-4xl mb-2 block"></i>
-                        <p class="text-sm">La papelera está vacía.</p>
-                    </div>`;
-                return;
-            }
-            const fmtDate = (ts) => {
-                try {
-                    return new Date(ts).toLocaleString('es-CL', {
-                        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-                    });
-                } catch { return ''; }
-            };
-            historyModalContent.innerHTML = items.map(it => {
-                const thumb = it.hasPhoto
-                    ? `<img src="/api/trash-photo?curso=${encodeURIComponent(activeCurso)}&id=${encodeURIComponent(it.id)}" alt="" class="w-12 h-12 object-cover rounded-lg border border-slate-200 bg-slate-100" />`
-                    : `<div class="w-12 h-12 rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-300"><i class="ph ph-user text-xl"></i></div>`;
-                const typeLabel = it.type === 'slot' ? 'Cuadro eliminado' : 'Foto eliminada';
-                const name = it.name ? it.name : '<span class="text-slate-400 italic">Sin nombre</span>';
-                return `
-                    <div class="flex items-center gap-3 p-2.5 rounded-lg border border-slate-200 bg-white" data-id="${it.id}">
-                        ${thumb}
-                        <div class="flex-grow min-w-0">
-                            <div class="text-sm font-semibold text-slate-800 truncate">${name}</div>
-                            <div class="text-xs text-slate-500 truncate">${it.rut ? it.rut + ' · ' : ''}${typeLabel}</div>
-                            <div class="text-[10px] text-slate-400">${fmtDate(it.deletedAt)}</div>
-                        </div>
-                        <div class="flex items-center gap-1.5 shrink-0">
-                            <button class="history-restore-btn flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all" title="Restaurar">
-                                <i class="ph ph-arrow-counter-clockwise"></i> Restaurar
-                            </button>
-                            <button class="history-delete-btn p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Eliminar definitivamente">
-                                <i class="ph ph-trash-simple"></i>
-                            </button>
-                        </div>
-                    </div>`;
-            }).join('');
+        async function copyToClipboard(text) {
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                    return true;
+                }
+            } catch {}
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.focus(); ta.select();
+                const ok = document.execCommand('copy');
+                ta.remove();
+                return ok;
+            } catch { return false; }
+        }
 
+        const fmtHistDate = (ts) => {
+            try {
+                return new Date(ts).toLocaleString('es-CL', {
+                    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                });
+            } catch { return ''; }
+        };
+
+        function renderHistory(items, logEntries = []) {
+            // ---- Sección 1: Papelera (restaurable) ----
+            const trashHtml = !items.length
+                ? `<div class="text-center text-slate-400 py-6 border border-dashed border-slate-200 rounded-lg">
+                       <i class="ph ph-trash text-2xl mb-1 block"></i>
+                       <p class="text-xs">No hay elementos para restaurar.</p>
+                   </div>`
+                : items.map(it => {
+                    const thumb = it.hasPhoto
+                        ? `<img src="/api/trash-photo?curso=${encodeURIComponent(activeCurso)}&id=${encodeURIComponent(it.id)}" alt="" class="w-12 h-12 object-cover rounded-lg border border-slate-200 bg-slate-100" />`
+                        : `<div class="w-12 h-12 rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-300"><i class="ph ph-user text-xl"></i></div>`;
+                    const typeLabel = it.type === 'slot' ? 'Cuadro eliminado' : 'Foto eliminada';
+                    const name = it.name ? escapeHtml(it.name) : '<span class="text-slate-400 italic">Sin nombre</span>';
+                    return `
+                        <div class="flex items-center gap-3 p-2.5 rounded-lg border border-slate-200 bg-white" data-id="${it.id}">
+                            ${thumb}
+                            <div class="flex-grow min-w-0">
+                                <div class="text-sm font-semibold text-slate-800 truncate">${name}</div>
+                                <div class="text-xs text-slate-500 truncate">${it.rut ? escapeHtml(it.rut) + ' · ' : ''}${typeLabel}</div>
+                                <div class="text-[10px] text-slate-400">${fmtHistDate(it.deletedAt)}</div>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <button class="history-restore-btn flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all" title="Restaurar">
+                                    <i class="ph ph-arrow-counter-clockwise"></i> Restaurar
+                                </button>
+                                <button class="history-delete-btn p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Eliminar definitivamente">
+                                    <i class="ph ph-trash-simple"></i>
+                                </button>
+                            </div>
+                        </div>`;
+                }).join('');
+
+            // ---- Sección 2: Registro de acciones (permanente) ----
+            const actionMeta = {
+                'delete-slot': { icon: 'ph-trash', color: 'text-red-600', verb: 'Se eliminó al alumno' },
+                'delete-photo': { icon: 'ph-image-broken', color: 'text-amber-600', verb: 'Se eliminó la foto de' },
+                'restore': { icon: 'ph-arrow-counter-clockwise', color: 'text-emerald-600', verb: 'Se restauró al alumno' }
+            };
+            const logHtml = !logEntries.length
+                ? `<div class="text-center text-slate-400 py-6 border border-dashed border-slate-200 rounded-lg">
+                       <i class="ph ph-clock-counter-clockwise text-2xl mb-1 block"></i>
+                       <p class="text-xs">Aún no hay acciones registradas.</p>
+                   </div>`
+                : logEntries.map(ev => {
+                    const m = actionMeta[ev.action] || { icon: 'ph-info', color: 'text-slate-500', verb: 'Acción' };
+                    const nameTxt = ev.name ? escapeHtml(ev.name) : '<span class="text-slate-400 italic">Sin nombre</span>';
+                    const rutTxt = ev.rut ? escapeHtml(ev.rut) : '<span class="text-slate-400 italic">Sin RUT</span>';
+                    return `
+                        <div class="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-100 bg-slate-50"
+                             data-name="${escapeHtml(ev.name || '')}" data-rut="${escapeHtml(ev.rut || '')}">
+                            <i class="ph ${m.icon} ${m.color} text-base mt-0.5"></i>
+                            <div class="flex-grow min-w-0">
+                                <div class="text-xs text-slate-700 leading-snug">
+                                    ${m.verb} <span class="font-semibold text-slate-900">${nameTxt}</span>
+                                    — RUT <span class="font-semibold text-slate-900">${rutTxt}</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">${fmtHistDate(ev.at)}</div>
+                            </div>
+                            <div class="flex flex-col gap-1 shrink-0">
+                                ${ev.rut ? `<button class="log-copy-rut px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition-all" title="Copiar RUT"><i class="ph ph-copy"></i> RUT</button>` : ''}
+                                ${(ev.name || ev.rut) ? `<button class="log-copy-both px-2 py-1 text-[10px] font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded transition-all" title="Copiar nombre y RUT"><i class="ph ph-copy"></i> Ambos</button>` : ''}
+                            </div>
+                        </div>`;
+                }).join('');
+
+            historyModalContent.innerHTML = `
+                <div class="mb-2 flex items-center gap-2 text-xs font-bold text-slate-600 uppercase tracking-wide">
+                    <i class="ph ph-trash text-amber-600"></i> Papelera (restaurar)
+                </div>
+                <div class="space-y-2.5">${trashHtml}</div>
+                <div class="mt-5 mb-2 flex items-center gap-2 text-xs font-bold text-slate-600 uppercase tracking-wide">
+                    <i class="ph ph-clock-counter-clockwise text-slate-500"></i> Registro de acciones
+                </div>
+                <p class="text-[11px] text-slate-400 mb-2">Queda constancia del nombre y RUT de cada alumno eliminado o restaurado, aunque se vacíe la papelera.</p>
+                <div class="space-y-2">${logHtml}</div>
+            `;
+
+            // Restaurar
             historyModalContent.querySelectorAll('.history-restore-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
@@ -1684,8 +1752,7 @@
                         });
                         await loadAlbum(activeCurso);
                         renderGrid();
-                        row.remove();
-                        if (!historyModalContent.querySelector('[data-id]')) renderHistory([]);
+                        await openHistoryModal(); // recargar papelera + registro (agrega evento de restauración)
                         toast('✓ Alumno restaurado (nombre, RUT y foto)');
                     } catch (err) {
                         btn.disabled = false;
@@ -1695,12 +1762,13 @@
                 });
             });
 
+            // Eliminar definitivamente (solo saca de la papelera; el registro se mantiene)
             historyModalContent.querySelectorAll('.history-delete-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     const row = btn.closest('[data-id]');
                     const id = row.dataset.id;
-                    if (!confirm('¿Eliminar definitivamente este elemento de la papelera? Esta acción no se puede deshacer.')) return;
+                    if (!confirm('¿Quitar este elemento de la papelera? El registro de acciones (nombre y RUT) se mantiene igual.')) return;
                     btn.disabled = true;
                     try {
                         await api('/api/trash-delete', {
@@ -1709,12 +1777,30 @@
                             body: JSON.stringify({ curso: activeCurso, id })
                         });
                         row.remove();
-                        if (!historyModalContent.querySelector('[data-id]')) renderHistory([]);
-                        toast('Eliminado definitivamente');
+                        toast('Quitado de la papelera');
                     } catch (err) {
                         btn.disabled = false;
                         toast(`Error: ${err.message}`, 'error');
                     }
+                });
+            });
+
+            // Copiar RUT / nombre+RUT desde el registro
+            historyModalContent.querySelectorAll('.log-copy-rut').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const row = btn.closest('[data-rut]');
+                    const ok = await copyToClipboard(row.dataset.rut || '');
+                    toast(ok ? '✓ RUT copiado' : 'No se pudo copiar', ok ? '' : 'error');
+                });
+            });
+            historyModalContent.querySelectorAll('.log-copy-both').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const row = btn.closest('[data-rut]');
+                    const txt = `${row.dataset.name || ''}\t${row.dataset.rut || ''}`.trim();
+                    const ok = await copyToClipboard(txt);
+                    toast(ok ? '✓ Nombre y RUT copiados' : 'No se pudo copiar', ok ? '' : 'error');
                 });
             });
         }
