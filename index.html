@@ -48,12 +48,10 @@
         .photo-editing { outline: 2px solid #3b82f6; outline-offset: -2px; }
         .cuadro-dragging { opacity: 0.45; }
         /* En dispositivos táctiles (celular/tablet) el arrastre no funciona:
-           ocultamos el asa de arrastre y dejamos siempre visibles las acciones
-           (incluido "mover a la posición N" y "descargar foto"), ya que no hay hover. */
+           solo ocultamos el asa de arrastre. Los botones siguen apareciendo al
+           tocar la foto (mismo comportamiento de hover/tap que en el resto). */
         @media (hover: none) and (pointer: coarse) {
             .move-handle { display: none !important; }
-            .action-btns { opacity: 1 !important; }
-            .download-photo-btn { opacity: 1 !important; }
         }
         .photo-editing img { cursor: move !important; user-select: none; }
     </style>
