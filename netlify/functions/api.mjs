@@ -10,6 +10,7 @@ export const config = {
     '/api/expand',
     '/api/shrink',
     '/api/delete-slot',
+    '/api/swap',
     '/api/trash',
     '/api/trash-photo',
     '/api/trash-restore',
@@ -425,6 +426,39 @@ export default async (request) => {
       }
       await saveMeta(curso, meta);
       return json({ ok: true });
+    }
+
+    if (path === 'swap' && method === 'POST') {
+      parsedBody = await request.json();
+      const { curso, a, b } = parsedBody;
+      if (!curso || typeof a !== 'number' || typeof b !== 'number') return err('curso, a and b required');
+      if (!userCanAccessCurso(user, curso)) return err('forbidden', 403);
+      const meta = await loadMeta(curso);
+      if (a < 0 || b < 0 || a >= meta.slots.length || b >= meta.slots.length) return err('invalid position');
+      if (a === b) return json({ ok: true, slots: meta.slots, size: meta.size });
+
+      const { photos } = stores();
+      // Leer ambas fotos ANTES de escribir para no pisar datos.
+      let aBlob = null, bBlob = null;
+      try { if (meta.slots[a].hasPhoto) aBlob = await photos.getWithMetadata(`photo:${curso}:${a}`, { type: 'arrayBuffer' }); } catch (e) { console.error('swap read a:', e?.message); }
+      try { if (meta.slots[b].hasPhoto) bBlob = await photos.getWithMetadata(`photo:${curso}:${b}`, { type: 'arrayBuffer' }); } catch (e) { console.error('swap read b:', e?.message); }
+
+      // Escribir cruzado: la foto de b va a la posición a, y viceversa.
+      if (bBlob) await photos.set(`photo:${curso}:${a}`, bBlob.data, { metadata: bBlob.metadata });
+      else await photos.delete(`photo:${curso}:${a}`).catch(() => {});
+      if (aBlob) await photos.set(`photo:${curso}:${b}`, aBlob.data, { metadata: aBlob.metadata });
+      else await photos.delete(`photo:${curso}:${b}`).catch(() => {});
+
+      // Intercambiar los metadatos completos del cuadro (nombre, RUT, encuadre, etc.).
+      const tmp = meta.slots[a];
+      meta.slots[a] = meta.slots[b];
+      meta.slots[b] = tmp;
+      // Refrescar timestamp para invalidar la caché de las imágenes en el navegador.
+      const now = Date.now();
+      meta.slots[a].photoUpdatedAt = now;
+      meta.slots[b].photoUpdatedAt = now;
+      await saveMeta(curso, meta);
+      return json({ ok: true, slots: meta.slots, size: meta.size });
     }
 
     if (path === 'info' && method === 'POST') {
